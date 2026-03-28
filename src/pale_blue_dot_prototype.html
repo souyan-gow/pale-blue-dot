@@ -611,30 +611,55 @@ function buildPlanetMesh(pd){
     for(let j=0;j<pos.count;j++){const rx=pos.getX(j),ry=pos.getY(j),rd=Math.sqrt(rx*rx+ry*ry);uv2.setXY(j,(rd-inner)/(outer-inner),.5);}
     const ring=new THREE.Mesh(rGeo,new THREE.MeshBasicMaterial({map:TEXTURES.saturn_ring,side:THREE.DoubleSide,transparent:true,depthWrite:false}));
     ring.rotation.x=Math.PI/2;mesh.add(ring);
-    // particles
-    const pCount=8000,pPos=new Float32Array(pCount*3),pCol=new Float32Array(pCount*3);
-    const bandW=[{r:[.00,.24],w:.1},{r:[.24,.62],w:.45},{r:[.62,.68],w:.01},{r:[.68,.93],w:.38},{r:[.96,1.0],w:.04}];
+    // Volumetric ring duplicate
+    const rGeo2=new THREE.RingGeometry(pd.r*1.22,pd.r*2.42,128);
+    const pos2=rGeo2.attributes.position,uv3=rGeo2.attributes.uv;
+    for(let j=0;j<pos2.count;j++){const rx=pos2.getX(j),ry=pos2.getY(j),rd=Math.sqrt(rx*rx+ry*ry);uv3.setXY(j,(rd-inner)/(outer-inner),.5);}
+    const ring2=new THREE.Mesh(rGeo2,new THREE.MeshBasicMaterial({map:TEXTURES.saturn_ring,side:THREE.DoubleSide,transparent:true,opacity:.4,depthWrite:false}));
+    ring2.rotation.x=Math.PI/2;ring2.position.y=pd.r*.008;mesh.add(ring2);
+    // B-ring self-shadow band
+    const shadowGeo=new THREE.RingGeometry(pd.r*1.44,pd.r*1.92,64);
+    const shadowMat=new THREE.MeshBasicMaterial({color:0x000000,transparent:true,opacity:.12,side:THREE.DoubleSide,depthWrite:false});
+    const shadowRing=new THREE.Mesh(shadowGeo,shadowMat);
+    shadowRing.rotation.x=Math.PI/2;shadowRing.position.y=-pd.r*.005;mesh.add(shadowRing);
+    // particles — 12,000 distributed by ring profile
+    const pCount=12000,pPos=new Float32Array(pCount*3),pCol=new Float32Array(pCount*3);
+    const bandW=[
+      {r:[.00,.24],w:.06},  // C ring (sparse)
+      {r:[.24,.42],w:.22},  // B ring inner (dense)
+      {r:[.42,.62],w:.28},  // B ring outer (densest)
+      {r:[.62,.68],w:.005}, // Cassini gap (nearly empty)
+      {r:[.68,.88],w:.28},  // A ring
+      {r:[.88,.93],w:.08},  // A ring outer
+      {r:[.96,1.0],w:.055}, // F ring
+    ];
     for(let j=0;j<pCount;j++){
       let pick=Math.random(),band=bandW[bandW.length-1];
       for(const bw of bandW){pick-=bw.w;if(pick<=0){band=bw;break;}}
       const t=band.r[0]+(band.r[1]-band.r[0])*Math.random();
       const radius=inner+t*(outer-inner);
       const angle=Math.random()*Math.PI*2;
-      const thick=pd.r*.01*(Math.random()-.5);
+      const thick=pd.r*.012*(Math.random()-.5);
       pPos[j*3]=Math.cos(angle)*radius;pPos[j*3+1]=thick;pPos[j*3+2]=Math.sin(angle)*radius;
       const br=.7+Math.random()*.3;pCol[j*3]=br*.9;pCol[j*3+1]=br*.82;pCol[j*3+2]=br*.55;
     }
     const pGeo=new THREE.BufferGeometry();
     pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
     pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
-    const pMesh=new THREE.Points(pGeo,new THREE.PointsMaterial({vertexColors:true,size:.015,transparent:true,opacity:.5,depthWrite:false,sizeAttenuation:true}));
+    const pMesh=new THREE.Points(pGeo,new THREE.PointsMaterial({vertexColors:true,size:.018,transparent:true,opacity:.55,depthWrite:false,sizeAttenuation:true}));
     mesh.add(pMesh);
   }
 
-  // Mars atmosphere
+  // Mars atmosphere (dust haze)
   if(pd.id==='mars'){
-    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.015,24,24),
-      new THREE.MeshStandardMaterial({color:0xc87040,transparent:true,opacity:.07,depthWrite:false,blending:THREE.AdditiveBlending})));
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.018,32,32),
+      new THREE.MeshStandardMaterial({color:0xc87040,transparent:true,opacity:.08,depthWrite:false,blending:THREE.AdditiveBlending})));
+  }
+
+  // Neptune atmosphere (blue glow)
+  if(pd.id==='neptune'){
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.025,32,32),
+      new THREE.MeshStandardMaterial({color:0x3060ff,transparent:true,opacity:.12,depthWrite:false,blending:THREE.AdditiveBlending})));
   }
 
   // Orbit line
