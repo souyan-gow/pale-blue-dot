@@ -1091,7 +1091,10 @@ function startLanding(planetId){
 // ═══════════════════════════════════════════════════════════════════════
 // SURFACE MODE
 // ═══════════════════════════════════════════════════════════════════════
+const visitedPlanets = []; // tracks planets player has landed on
+
 function enterSurfaceMode(pd){
+  if(!visitedPlanets.includes(pd.id)) visitedPlanets.push(pd.id);
   cockpitMode=true;
   const mesh=planetMeshes[pd.id];
   const planetPos=mesh.getWorldPosition(new THREE.Vector3());
@@ -1174,14 +1177,28 @@ function startReturnJourney(){
   cockpitMode=false;
   showMsg('地球へ——帰還の旅が始まる',3000,'#4fc3f7');
 
-  // Montage of key places
-  const keyPlaces=[
-    {id:'neptune',msg:'海王星軌道——太陽系の最果て'},
-    {id:'saturn', msg:'土星——リングの美しさよ、さらば'},
-    {id:'jupiter',msg:'木星——嵐は今日も続いている'},
-    {id:'mars',   msg:'火星——赤い星が近づいてくる'},
-    {id:'earth',  msg:'地球——見えてきた。あの青い点が'},
-  ];
+  // Build montage from visited planets (reverse order), always end at earth
+  const visitMsgs={
+    mercury:'水星——灼熱の荒野を振り返る',
+    venus:'金星——硫酸の雲の下を通過',
+    earth:'地球——見えてきた。あの青い点が',
+    mars:'火星——赤い砂漠よ、さらば',
+    jupiter:'木星——嵐は今日も続いている',
+    saturn:'土星——リングの美しさよ、さらば',
+    uranus:'天王星——氷の巨人を横目に',
+    neptune:'海王星——太陽系の最果てを通過',
+  };
+  const fallbackPlaces=['neptune','saturn','jupiter','mars','earth'];
+  const visited=visitedPlanets.length>0?[...visitedPlanets]:[];
+  // Ensure earth is last and not duplicated
+  const filtered=visited.filter(id=>id!=='earth');
+  filtered.reverse();
+  filtered.push('earth');
+  // If player visited nothing, use fallback
+  const keyPlaces=(filtered.length>1?filtered:fallbackPlaces).map(id=>({
+    id,
+    msg:visitMsgs[id]||`${PLANET_MAP[id]?.nameJa||id}を通過`,
+  }));
 
   let idx=0;
   let elapsed=0;
@@ -1198,7 +1215,8 @@ function startReturnJourney(){
       spherical.theta+=1.2;
       updateCamera();
     }
-    showMsg(kp.msg,2500,'#b0c8e8');
+    const sunDist=camera.position.length();
+    showMsg(`${kp.msg}\n太陽から光で${formatLight(sunDist)}`,2500,'#b0c8e8');
     setTimeout(nextMontage,montageInterval);
   }
 
