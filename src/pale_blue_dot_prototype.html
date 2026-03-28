@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PALE BLUE DOT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;width:100vw;height:100vh;font-family:'Courier New',monospace;color:#e0eaff;user-select:none}
+canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
+
+/* ── HUD ── */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10}
+#hud-top{position:absolute;top:0;left:0;right:0;padding:18px 24px;display:flex;justify-content:space-between;align-items:flex-start;background:linear-gradient(to bottom,rgba(0,0,0,.75),transparent)}
+#title-block{pointer-events:none}
+#game-title{font-size:15px;letter-spacing:.22em;color:#4fc3f7;font-weight:bold}
+#game-sub{font-size:10px;color:#446;letter-spacing:.12em;margin-top:2px}
+#nav-info{text-align:right;font-size:11px;color:#8ab;line-height:1.8;font-family:'Courier New',monospace}
+#hud-bottom{position:absolute;bottom:0;left:0;right:0;padding:16px 24px;background:linear-gradient(to top,rgba(0,0,0,.75),transparent)}
+#controls-row{display:flex;align-items:center;gap:16px;pointer-events:all;flex-wrap:wrap}
+.ctrl-label{font-size:10px;color:#446;letter-spacing:.08em}
+#speed-range{-webkit-appearance:none;width:100px;height:2px;background:linear-gradient(90deg,#4fc3f7,#112);border-radius:2px}
+#speed-range::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#4fc3f7;cursor:pointer;box-shadow:0 0 6px #4fc3f7}
+.hud-btn{padding:6px 14px;border-radius:20px;border:1px solid rgba(79,195,247,.4);background:rgba(0,10,30,.6);color:#4fc3f7;font-size:11px;cursor:pointer;letter-spacing:.08em;transition:all .2s;backdrop-filter:blur(4px)}
+.hud-btn:hover{background:rgba(79,195,247,.15);border-color:#4fc3f7}
+.hud-btn.active{background:rgba(79,195,247,.25);border-color:#4fc3f7;box-shadow:0 0 12px rgba(79,195,247,.3)}
+#photo-count{color:#c9a227;font-size:11px;letter-spacing:.06em}
+
+/* ── DESTINATION MENU ── */
+#dest-menu{position:fixed;left:24px;top:50%;transform:translateY(-50%);z-index:15;display:none;flex-direction:column;gap:6px;pointer-events:all}
+#dest-menu.show{display:flex}
+.dest-btn{padding:7px 16px;border-radius:8px;border:1px solid rgba(79,195,247,.3);background:rgba(0,8,22,.8);color:#b0c8e8;font-size:12px;cursor:pointer;letter-spacing:.06em;transition:all .2s;backdrop-filter:blur(6px);text-align:left;white-space:nowrap}
+.dest-btn:hover{background:rgba(79,195,247,.18);color:#fff;border-color:#4fc3f7}
+.dest-btn.current{color:#4fc3f7;border-color:rgba(79,195,247,.6)}
+.dest-btn.far{color:#8ab;opacity:.6}
+#dest-title{font-size:10px;color:#446;letter-spacing:.12em;margin-bottom:4px;padding-left:4px}
+
+/* ── INFO PANEL ── */
+#info-panel{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:15;width:260px;background:rgba(3,8,22,.92);border:1px solid rgba(79,195,247,.2);border-radius:14px;padding:20px 18px;display:none;backdrop-filter:blur(12px)}
+#info-panel.show{display:block}
+#info-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#446;font-size:16px;cursor:pointer;pointer-events:all}
+#info-close:hover{color:#fff}
+#info-dot{width:48px;height:48px;border-radius:50%;margin:0 auto 10px}
+#info-name-en{font-size:10px;letter-spacing:.18em;color:#446;text-align:center}
+#info-name-ja{font-size:20px;text-align:center;margin-bottom:12px;color:#fff}
+.info-fact{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:11px}
+.info-fact:last-child{border-bottom:none}
+.info-fk{color:#557}.info-fv{color:#4fc3f7;font-family:monospace}
+#travel-btn{display:block;width:100%;margin-top:14px;padding:9px;background:linear-gradient(135deg,rgba(79,195,247,.18),rgba(79,195,247,.04));border:1px solid rgba(79,195,247,.45);border-radius:8px;color:#4fc3f7;font-size:12px;letter-spacing:.08em;cursor:pointer;transition:all .2s;text-align:center;pointer-events:all}
+#travel-btn:hover{background:rgba(79,195,247,.25);box-shadow:0 0 16px rgba(79,195,247,.25)}
+
+/* ── ALBUM ── */
+#album{position:fixed;inset:0;z-index:30;background:rgba(0,4,16,.95);display:none;flex-direction:column;backdrop-filter:blur(8px)}
+#album.show{display:flex}
+#album-header{padding:20px 28px;border-bottom:1px solid rgba(79,195,247,.15);display:flex;justify-content:space-between;align-items:center}
+#album-title{font-size:16px;letter-spacing:.2em;color:#4fc3f7}
+#album-close{background:none;border:none;color:#446;font-size:18px;cursor:pointer}
+#album-close:hover{color:#fff}
+#album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;padding:20px 28px;overflow-y:auto;flex:1}
+.album-slot{border:1px solid rgba(79,195,247,.2);border-radius:10px;overflow:hidden;background:rgba(0,8,22,.6);aspect-ratio:16/9;position:relative;cursor:pointer}
+.album-slot canvas{width:100%;height:100%;display:block}
+.album-slot .slot-label{position:absolute;bottom:0;left:0;right:0;padding:8px 10px;background:linear-gradient(to top,rgba(0,0,0,.85),transparent);font-size:10px;color:#9ab;letter-spacing:.05em;line-height:1.4}
+.album-slot .slot-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#334;font-size:11px;gap:6px}
+.album-slot .slot-empty-icon{font-size:24px;opacity:.3}
+
+/* ── SEQUENCE OVERLAYS ── */
+#sequence{position:fixed;inset:0;z-index:40;pointer-events:none}
+#flash{position:fixed;inset:0;z-index:50;background:#fff;opacity:0;pointer-events:none;transition:opacity .3s}
+#msg-overlay{position:fixed;inset:0;z-index:45;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;opacity:0;transition:opacity 1s}
+#msg-title{font-size:clamp(20px,4vw,48px);font-weight:bold;letter-spacing:.2em;text-align:center;margin-bottom:12px}
+#msg-sub{font-size:14px;letter-spacing:.15em;color:#4fc3f7;text-align:center;line-height:1.8}
+
+/* ── LANDING OVERLAY ── */
+#land-overlay{position:fixed;inset:0;z-index:48;background:radial-gradient(ellipse,transparent 30%,#000 100%);opacity:0;pointer-events:none;transition:opacity .5s}
+#speed-lines-c{position:fixed;inset:0;z-index:47;pointer-events:none;opacity:0}
+
+/* ── ENDING ── */
+#ending{position:fixed;inset:0;z-index:60;background:#000;display:none;flex-direction:column;align-items:center;justify-content:center;padding:40px}
+#ending.show{display:flex}
+#ending-text{font-size:15px;color:#b0c8e8;line-height:2.2;text-align:center;max-width:620px;letter-spacing:.04em}
+#ending-text .highlight{color:#4fc3f7}
+#ending-photos{display:flex;gap:12px;margin-top:30px;flex-wrap:wrap;justify-content:center;max-width:800px}
+#ending-photos canvas{width:160px;height:90px;border-radius:8px;border:1px solid rgba(79,195,247,.25)}
+#ending-restart{margin-top:30px;padding:10px 28px;border:1px solid rgba(79,195,247,.4);border-radius:24px;background:transparent;color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em;transition:all .2s}
+#ending-restart:hover{background:rgba(79,195,247,.15)}
+
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;z-index:100;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#loading p{font-size:13px;color:#4fc3f7;letter-spacing:.12em}
+#lbar{width:200px;height:2px;background:#111;border-radius:2px}
+#lprog{height:100%;background:#4fc3f7;border-radius:2px;width:0%;transition:width .4s}
+</style>
+</head>
+<body>
+<div id="loading"><p>PALE BLUE DOT — 初期化中...</p><div id="lbar"><div id="lprog"></div></div></div>
+<canvas id="c"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="hud-top">
+    <div id="title-block">
+      <div id="game-title">PALE BLUE DOT</div>
+      <div id="game-sub">A Journey Through the Solar System — and Beyond</div>
+    </div>
+    <div id="nav-info">
+      <span id="nav-dest">目的地: —</span><br>
+      <span id="nav-dist">距離: —</span><br>
+      <span id="nav-light">光で: —</span>
+    </div>
+  </div>
+  <div id="hud-bottom">
+    <div id="controls-row">
+      <span class="ctrl-label">時間加速</span>
+      <input type="range" id="speed-range" min="0" max="5" step="0.05" value="1">
+      <span id="speed-val" style="font-size:11px;color:#4fc3f7;min-width:50px">×1.0</span>
+      <button class="hud-btn" id="nav-btn">🗺 目的地</button>
+      <button class="hud-btn" id="photo-btn">📷 撮影</button>
+      <button class="hud-btn" id="album-btn">🖼 アルバム</button>
+      <span id="photo-count">📸 0枚</span>
+    </div>
+  </div>
+</div>
+
+<!-- Destination menu -->
+<div id="dest-menu">
+  <div id="dest-title">DESTINATION</div>
+</div>
+
+<!-- Info panel -->
+<div id="info-panel">
+  <button id="info-close">✕</button>
+  <div id="info-dot"></div>
+  <div id="info-name-en"></div>
+  <div id="info-name-ja"></div>
+  <div id="info-facts"></div>
+  <button id="travel-btn">🚀 この惑星を旅する</button>
+</div>
+
+<!-- Speed lines canvas -->
+<canvas id="speed-lines-c"></canvas>
+<div id="land-overlay"></div>
+<div id="msg-overlay"><div id="msg-title"></div><div id="msg-sub"></div></div>
+<div id="flash"></div>
+
+<!-- Album -->
+<div id="album">
+  <div id="album-header">
+    <div id="album-title">📸 PALE BLUE DOT — アルバム</div>
+    <button id="album-close">✕</button>
+  </div>
+  <div id="album-grid"></div>
+</div>
+
+<!-- Ending -->
+<div id="ending">
+  <div id="ending-text"></div>
+  <div id="ending-photos"></div>
+  <button id="ending-restart">もう一度旅をする</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════════
+// PLANET DATA
+// ═══════════════════════════════════════════════════════════════════════
+const SUN_R = 109.3;
+const EARTH_ORBIT = 409.3;
+
+const PLANETS = [
+  { id:'sun',     nameJa:'太陽',    nameEn:'SUN',      color:0xFDB813, colorHex:'#FDB813', r:SUN_R,  orbitR:0,      period:0,    tilt:0,
+    facts:[['直径','1,392,700 km'],['表面温度','5,500 °C'],['年齢','約46億年']], noTravel:true },
+  { id:'mercury', nameJa:'水星',    nameEn:'MERCURY',  color:0x9a9a9a, colorHex:'#9a9a9a', r:0.383, orbitR:158.4,  period:2.4,  tilt:0.034,
+    facts:[['直径','4,879 km'],['公転周期','87.97日'],['衛星数','0'],['平均温度','167°C']] },
+  { id:'venus',   nameJa:'金星',    nameEn:'VENUS',    color:0xd4a847, colorHex:'#d4a847', r:0.950, orbitR:295.9,  period:6.2,  tilt:177.4,
+    facts:[['直径','12,104 km'],['公転周期','224.7日'],['衛星数','0'],['平均温度','464°C']] },
+  { id:'earth',   nameJa:'地球',    nameEn:'EARTH',    color:0x2a6fd4, colorHex:'#2a6fd4', r:1.000, orbitR:409.3,  period:10,   tilt:23.4,
+    facts:[['直径','12,742 km'],['公転周期','365.25日'],['衛星数','1'],['平均温度','15°C']] },
+  { id:'mars',    nameJa:'火星',    nameEn:'MARS',     color:0xb5391a, colorHex:'#b5391a', r:0.532, orbitR:623.8,  period:18.8, tilt:25.2,
+    facts:[['直径','6,779 km'],['公転周期','686.97日'],['衛星数','2'],['平均温度','-65°C']] },
+  { id:'jupiter', nameJa:'木星',    nameEn:'JUPITER',  color:0xc4935a, colorHex:'#c4935a', r:10.973,orbitR:2129.6, period:118,  tilt:3.1,
+    facts:[['直径','139,820 km'],['公転周期','11.86年'],['衛星数','95'],['平均温度','-110°C']] },
+  { id:'saturn',  nameJa:'土星',    nameEn:'SATURN',   color:0xc8b560, colorHex:'#c8b560', r:9.140, orbitR:3903.5, period:295,  tilt:26.7, ring:true,
+    facts:[['直径','116,460 km'],['公転周期','29.46年'],['衛星数','146'],['平均温度','-140°C']] },
+  { id:'uranus',  nameJa:'天王星',  nameEn:'URANUS',   color:0x7acfcf, colorHex:'#7acfcf', r:3.981, orbitR:7854.5, period:840,  tilt:97.8,
+    facts:[['直径','50,724 km'],['公転周期','84.01年'],['衛星数','28'],['平均温度','-195°C']] },
+  { id:'neptune', nameJa:'海王星',  nameEn:'NEPTUNE',  color:0x2f4db5, colorHex:'#2f4db5', r:3.865, orbitR:12307.7,period:1648, tilt:28.3,
+    facts:[['直径','49,244 km'],['公転周期','164.8年'],['衛星数','16'],['平均温度','-200°C']] },
+  { id:'heliopause',nameJa:'ヘリオポーズ',nameEn:'HELIOPAUSE',color:0x4488cc,colorHex:'#4488cc',r:0,orbitR:49128, period:0, tilt:0,
+    facts:[['距離','120 AU'],['意味','太陽風の届かなくなる境界'],['到達','ボイジャー1号が2012年通過']], noTravel:true, isBoundary:true },
+  { id:'alpha_centauri',nameJa:'ケンタウルス座α',nameEn:'ALPHA CENTAURI',color:0xffe0a0,colorHex:'#ffe0a0',r:0,orbitR:409.3*265000,period:0,tilt:0,
+    facts:[['距離','4.24 光年'],['恒星数','3（連星系）'],['惑星','プロキシマb（ハビタブルゾーン）']], noTravel:true, isStar:true },
+];
+
+const PLANET_MAP = {};
+PLANETS.forEach(p => PLANET_MAP[p.id] = p);
+
+// ═══════════════════════════════════════════════════════════════════════
+// THREE.JS SETUP
+// ═══════════════════════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(65, innerWidth/innerHeight, 0.01, 200000000);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// PROCEDURAL TEXTURES (lightweight)
+// ═══════════════════════════════════════════════════════════════════════
+function noise(x,y,s=0){
+  const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;
+  const u=fx*fx*(3-2*fx),v=fy*fy*(3-2*fy);
+  function h(a,b){let n=a*1619+b*31337+s*1013;n=(n^(n>>13))*(n*n*15731+789221)+1376312589;return((n>>16)&0xffff)/0xffff;}
+  return h(ix,iy)*(1-u)*(1-v)+h(ix+1,iy)*u*(1-v)+h(ix,iy+1)*(1-u)*v+h(ix+1,iy+1)*u*v;
+}
+function fbm(x,y,octs=5,s=0){let v=0,a=.5,f=1;for(let i=0;i<octs;i++){v+=a*noise(x*f,y*f,s+i*100);a*=.5;f*=2.1;}return v;}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+function makeTex(fn, w=256, h=256){
+  const c=document.createElement('canvas');c.width=w;c.height=h;
+  const g=c.getContext('2d'),id=g.createImageData(w,h),d=id.data;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const [r,gv,b]=fn(x/w,y/h);
+    const i=(y*w+x)*4;d[i]=clamp(r,0,255);d[i+1]=clamp(gv,0,255);d[i+2]=clamp(b,0,255);d[i+3]=255;
+  }
+  g.putImageData(id,0,0);
+  return new THREE.CanvasTexture(c);
+}
+
+const TEXTURES = {
+  sun: makeTex((x,y)=>{
+    const n=fbm(x*4,y*4,6,90),cell=noise(x*10,y*10,91)>.58?1:0;
+    const dx=(x-.5)*2,dy=(y-.5)*2,r2=dx*dx+dy*dy;
+    const limb=r2<1?Math.pow(1-r2,.25):0;
+    const t=n*.6+cell*.4;
+    return[lerp(255,200,1-limb),clamp(lerp(150+t*80,70,1-limb),0,255),clamp(lerp(20+t*40,5,1-limb),0,255)];
+  },512,512),
+  mercury: makeTex((x,y)=>{
+    const n=fbm(x*5,y*5,5,1),t=n*.55+fbm(x*12,y*12,3,110)*.45;
+    const v=90+t*100;return[v+8,v,v-5];
+  }),
+  venus: makeTex((x,y)=>{
+    const n=fbm(x*3+Math.sin(y*Math.PI*3)*.5,y*6,5,2);
+    const band=Math.sin(y*Math.PI*10+n*2)*.5+.5;
+    return[180+band*50+n*25,125+band*55+n*18,38+band*20+n*12];
+  }),
+  earth: makeTex((x,y)=>{
+    const nx=x*3,ny=y*1.5,lat=(y-.5)*Math.PI,lon=x*Math.PI*2;
+    let land=0;
+    if(fbm(nx+1.5,ny+.5,6,10)>.56&&lat>-.12&&lat<.72&&lon>1.0&&lon<5.5)land=1;
+    if(fbm(nx+1.8,ny+.8,6,11)>.555&&lat>-.62&&lat<.42&&lon>1.8&&lon<3.8)land=Math.max(land,1);
+    if(fbm(nx-.5,ny+.3,6,12)>.555&&(lon<1.5||lon>5.4))land=Math.max(land,1);
+    if(Math.abs(lat)>1.05)return[230,238,250];
+    if(land){
+      const n=fbm(nx*3,ny*3,4,14),aLat=Math.abs(lat);
+      if(aLat>1.0)return[220+n*20,228+n*15,238+n*10];
+      if(fbm(nx+1,ny+2,3,15)>.54&&aLat<.45)return[185+n*30,148+n*25,75+n*20];
+      if(aLat<.25)return[30+n*25,100+n*35,25+n*15];
+      return[50+n*28,115+n*38,38+n*18];
+    }
+    const d=fbm(nx,ny,4,16);return[12+d*22,42+d*42,128+d*62];
+  },512,512),
+  earthcloud: makeTex((x,y)=>{
+    const n=fbm(x*5,y*2.5,6,20),yf=y;
+    const trop=Math.exp(-Math.pow((yf-.5)*6,2))*.5;
+    const cloud=clamp(n*.5+trop-.28,0,1);
+    const a=cloud*280|0;
+    return[255,255,255]; // alpha handled separately
+  }),
+  mars: makeTex((x,y)=>{
+    const n=fbm(x*4,y*2,6,30),hi=fbm(x*1.2,y*1.2,4,250)>.55;
+    if(hi)return[100+n*75,45+n*32,22+n*18];
+    if(Math.abs(y-.5)>.42)return[230+n*15,235+n*10,240+n*8];
+    return[clamp(162+n*62,0,255),clamp(65+n*40,0,255),clamp(30+n*20,0,255)];
+  }),
+  jupiter: makeTex((x,y)=>{
+    const bands=[[0,.06,[215,195,158],[160,125,85]],[.06,.11,[135,88,52],[100,62,35]],[.11,.18,[205,168,118],[175,138,88]],[.18,.27,[218,185,138],[188,152,105]],[.27,.35,[215,178,128],[180,145,95]],[.35,.43,[222,188,142],[192,158,112]],[.43,.52,[218,182,135],[188,150,100]],[.52,.60,[215,178,130],[182,145,95]],[.60,.68,[215,178,128],[180,145,95]],[.68,.76,[210,175,125],[178,142,92]],[.76,.85,[215,178,128],[180,145,95]],[.85,1,[212,178,128],[180,145,95]]];
+    let bg=[200,160,110],dk=[160,120,75];
+    for(const [y0,y1,b,d] of bands)if(y>=y0&&y<y1){bg=b;dk=d;break;}
+    const f=fbm(x*8+Math.sin(y*40)*.4,y*12,6,40+Math.floor(y*10)*100);
+    const t=clamp(f,0,1);
+    // GRS
+    const gx=.62,gy=.465;const dx2=x-gx,dy2=y-gy;
+    if(dx2*dx2/.012+dy2*dy2/.005<1){
+      const gr=Math.sqrt(dx2*dx2/.012+dy2*dy2/.005);
+      const rc=lerp(220,160,gr),gc=lerp(85,55,gr),bc=lerp(35,25,gr);
+      return[rc,gc,bc];
+    }
+    return[lerp(bg[0],dk[0],t),lerp(bg[1],dk[1],t),lerp(bg[2],dk[2],t)];
+  },512,256),
+  saturn: makeTex((x,y)=>{
+    const bands=[[0,.07,[228,212,155],[195,178,120]],[.07,.12,[178,155,88],[148,128,65]],[.12,.24,[222,205,145],[192,172,108]],[.24,.39,[230,215,158],[200,182,118]],[.39,.51,[228,212,152],[198,178,112]],[.51,.66,[225,208,148],[195,175,108]],[.66,.83,[222,205,145],[192,170,105]],[.83,1,[225,210,152],[195,175,110]]];
+    let bg=[215,198,140],dk=[182,162,98];
+    for(const [y0,y1,b,d] of bands)if(y>=y0&&y<y1){bg=b;dk=d;break;}
+    const f=fbm(x*6+Math.sin(y*30)*.3,y*10,5,50+Math.floor(y*8)*100)*.65+fbm(x*12,y*16,3,52)*.35;
+    const t=clamp(f,0,1);
+    return[lerp(bg[0],dk[0],t),lerp(bg[1],dk[1],t),lerp(bg[2],dk[2],t)];
+  },512,256),
+  saturn_ring: (()=>{
+    const w=512,h=4;const c=document.createElement('canvas');c.width=w;c.height=h;
+    const g=c.getContext('2d'),id=g.createImageData(w,h),d=id.data;
+    for(let x=0;x<w;x++){
+      const t=x/w;
+      const n1=fbm(t*40,.5,3,601),n2=fbm(t*80,.3,2,602),micro=n1*.6+n2*.4;
+      let a=0,r=210,gv=185,b=110;
+      if(t<.03){a=t/.03*.18;}
+      else if(t<.24){a=.18+micro*.25;r=175+micro*25;gv=158+micro*20;b=108+micro*15;}
+      else if(t<.62){a=.75+micro*.22*(t<.42?.8:1);r=225+micro*15;gv=205+micro*12;b=145+micro*10;}
+      else if(t<.68){a=micro*.05;}
+      else if(t<.93){a=.58+micro*.28;r=218+micro*18;gv=198+micro*15;b=138+micro*10;}
+      else if(t<.975){a=.3+micro*.4;r=230+micro*20;gv=215+micro*15;b=155+micro*10;}
+      for(let y=0;y<h;y++){const i=(y*w+x)*4;d[i]=clamp(r,0,255);d[i+1]=clamp(gv,0,255);d[i+2]=clamp(b,0,255);d[i+3]=clamp(a*255,0,255);}
+    }
+    g.putImageData(id,0,0);return new THREE.CanvasTexture(c);
+  })(),
+  uranus: makeTex((x,y)=>{
+    const n=fbm(x*3,y*3,4,70)*.35,lim=Math.pow(Math.abs(y-.5)*2,2)*.3;
+    return[clamp(88+(n+lim)*50,0,255),clamp(188+(n+lim)*28,0,255),clamp(192+(n+lim)*25,0,255)];
+  }),
+  neptune: makeTex((x,y)=>{
+    const n=fbm(x*4,y*4,5,80),band=Math.sin(y*Math.PI*14+n*4)*.5+.5;
+    const t=n*.45+band*.35;
+    return[clamp(18+t*45,0,255),clamp(35+t*65,0,255),clamp(155+t*75,0,255)];
+  }),
+  stars: (()=>{
+    const w=2048,h=1024;const c=document.createElement('canvas');c.width=w;c.height=h;
+    const g=c.getContext('2d');g.fillStyle='#00000A';g.fillRect(0,0,w,h);
+    const rng=()=>Math.random();
+    for(let i=0;i<5000;i++){
+      const x=rng()*w,y=rng()*h,r=rng()*1.5+.2,a=rng()*.8+.2;
+      const t=rng();
+      g.beginPath();g.arc(x,y,r,0,Math.PI*2);
+      if(t<.08)g.fillStyle=`rgba(180,200,255,${a})`;
+      else if(t<.14)g.fillStyle=`rgba(255,220,180,${a})`;
+      else g.fillStyle=`rgba(255,255,255,${a})`;
+      g.fill();
+    }
+    // nebula wisps
+    [{x:.2,y:.35,c:'rgba(40,30,80,.05)'},{x:.7,y:.6,c:'rgba(20,40,80,.04)'},{x:.5,y:.18,c:'rgba(50,20,70,.04)'}].forEach(n=>{
+      const ng=g.createRadialGradient(n.x*w,n.y*h,0,n.x*w,n.y*h,320);ng.addColorStop(0,n.c);ng.addColorStop(1,'rgba(0,0,0,0)');
+      g.beginPath();g.arc(n.x*w,n.y*h,320,0,Math.PI*2);g.fillStyle=ng;g.fill();
+    });
+    return new THREE.CanvasTexture(c);
+  })(),
+};
+
+// Earth cloud texture with alpha
+function makeCloudTex(){
+  const w=256,h=256,c=document.createElement('canvas');c.width=w;c.height=h;
+  const g=c.getContext('2d'),id=g.createImageData(w,h),d=id.data;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const yf=y/h;
+    const n=fbm(x/w*5,yf*2.5,6,20);
+    const trop=Math.exp(-Math.pow((yf-.5)*6,2))*.5;
+    const cloud=clamp(n*.5+trop-.3,0,1);
+    const i=(y*w+x)*4;d[i]=255;d[i+1]=255;d[i+2]=255;d[i+3]=clamp(cloud*260,0,255);
+  }
+  g.putImageData(id,0,0);return new THREE.CanvasTexture(c);
+}
+TEXTURES.earthcloud = makeCloudTex();
+
+// ═══════════════════════════════════════════════════════════════════════
+// BUILD SOLAR SCENE
+// ═══════════════════════════════════════════════════════════════════════
+// Starfield
+scene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(100000000,32,16),
+  new THREE.MeshBasicMaterial({map:TEXTURES.stars,side:THREE.BackSide})
+));
+
+// Lighting
+const sunLight = new THREE.PointLight(0xfff5e0,3.5,150000);
+scene.add(sunLight);
+scene.add(new THREE.AmbientLight(0x111122,.2));
+
+// Build planet meshes
+const planetMeshes = {};
+const orbitAngles = {};
+const selfRot = {};
+
+function buildPlanetMesh(pd){
+  if(pd.r===0||pd.isBoundary||pd.isStar) return;
+  const tex = TEXTURES[pd.id] || null;
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, roughness:.85, metalness:.0
+  });
+  const geo = new THREE.SphereGeometry(pd.r, 48, 48);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  mesh.userData.planetId = pd.id;
+
+  if(pd.id==='sun'){
+    mesh.material = new THREE.MeshBasicMaterial({map:tex});
+    // Sun glow
+    const glowC=document.createElement('canvas');glowC.width=glowC.height=128;
+    const gc=glowC.getContext('2d');
+    const gg=gc.createRadialGradient(64,64,0,64,64,64);
+    gg.addColorStop(0,'rgba(255,220,80,.9)');gg.addColorStop(.2,'rgba(255,160,40,.5)');
+    gg.addColorStop(.6,'rgba(255,100,0,.12)');gg.addColorStop(1,'rgba(255,80,0,0)');
+    gc.fillStyle=gg;gc.fillRect(0,0,128,128);
+    const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(glowC),transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    spr.scale.set(SUN_R*8,SUN_R*8,1);
+    mesh.add(spr);
+  }
+
+  // Earth clouds
+  if(pd.id==='earth'){
+    const atm=new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.02,32,32),
+      new THREE.MeshStandardMaterial({color:0x4488ff,transparent:true,opacity:.15,depthWrite:false,blending:THREE.AdditiveBlending}));
+    mesh.add(atm);
+    const cloud=new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.012,32,32),
+      new THREE.MeshStandardMaterial({map:TEXTURES.earthcloud,transparent:true,opacity:.8,depthWrite:false}));
+    cloud.userData.isCloud=true;
+    mesh.add(cloud);
+  }
+
+  // Saturn rings
+  if(pd.ring){
+    const rGeo=new THREE.RingGeometry(pd.r*1.22,pd.r*2.42,128);
+    const pos=rGeo.attributes.position,uv2=rGeo.attributes.uv;
+    const inner=pd.r*1.22,outer=pd.r*2.42;
+    for(let j=0;j<pos.count;j++){const rx=pos.getX(j),ry=pos.getY(j),rd=Math.sqrt(rx*rx+ry*ry);uv2.setXY(j,(rd-inner)/(outer-inner),.5);}
+    const ring=new THREE.Mesh(rGeo,new THREE.MeshBasicMaterial({map:TEXTURES.saturn_ring,side:THREE.DoubleSide,transparent:true,depthWrite:false}));
+    ring.rotation.x=Math.PI/2;mesh.add(ring);
+    // particles
+    const pCount=8000,pPos=new Float32Array(pCount*3),pCol=new Float32Array(pCount*3);
+    const bandW=[{r:[.00,.24],w:.1},{r:[.24,.62],w:.45},{r:[.62,.68],w:.01},{r:[.68,.93],w:.38},{r:[.96,1.0],w:.04}];
+    for(let j=0;j<pCount;j++){
+      let pick=Math.random(),band=bandW[bandW.length-1];
+      for(const bw of bandW){pick-=bw.w;if(pick<=0){band=bw;break;}}
+      const t=band.r[0]+(band.r[1]-band.r[0])*Math.random();
+      const radius=inner+t*(outer-inner);
+      const angle=Math.random()*Math.PI*2;
+      const thick=pd.r*.01*(Math.random()-.5);
+      pPos[j*3]=Math.cos(angle)*radius;pPos[j*3+1]=thick;pPos[j*3+2]=Math.sin(angle)*radius;
+      const br=.7+Math.random()*.3;pCol[j*3]=br*.9;pCol[j*3+1]=br*.82;pCol[j*3+2]=br*.55;
+    }
+    const pGeo=new THREE.BufferGeometry();
+    pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
+    pGeo.setAttribute('color',new THREE.BufferAttribute(pCol,3));
+    const pMesh=new THREE.Points(pGeo,new THREE.PointsMaterial({vertexColors:true,size:.015,transparent:true,opacity:.5,depthWrite:false,sizeAttenuation:true}));
+    mesh.add(pMesh);
+  }
+
+  // Mars atmosphere
+  if(pd.id==='mars'){
+    mesh.add(new THREE.Mesh(new THREE.SphereGeometry(pd.r*1.015,24,24),
+      new THREE.MeshStandardMaterial({color:0xc87040,transparent:true,opacity:.07,depthWrite:false,blending:THREE.AdditiveBlending})));
+  }
+
+  // Orbit line
+  if(pd.orbitR>0){
+    const pts=[];
+    for(let j=0;j<=128;j++){const a=j/128*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR));}
+    scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({color:0x223355,transparent:true,opacity:.3})));
+  }
+
+  scene.add(mesh);
+  planetMeshes[pd.id] = mesh;
+  orbitAngles[pd.id] = Math.random()*Math.PI*2;
+  selfRot[pd.id] = 0;
+}
+
+// Heliopause boundary ring
+{
+  const hp=PLANET_MAP['heliopause'];
+  const pts=[];for(let j=0;j<=128;j++){const a=j/128*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*hp.orbitR,0,Math.sin(a)*hp.orbitR));}
+  const hpMesh=new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({color:0x4488cc,transparent:true,opacity:.15}));
+  scene.add(hpMesh);
+}
+
+function setProgress(p){document.getElementById('lprog').style.width=p+'%';}
+setProgress(10);
+PLANETS.forEach((pd,i)=>{setProgress(10+i*8);buildPlanetMesh(pd);});
+setProgress(90);
+
+// ═══════════════════════════════════════════════════════════════════════
+// CAMERA / NAVIGATION STATE
+// ═══════════════════════════════════════════════════════════════════════
+let camState = 'orbit'; // 'orbit' | 'traveling' | 'surface' | 'returning' | 'ending'
+let spherical = {theta:0.3, phi:Math.PI/3.5, r:3000};
+let orbitTarget = new THREE.Vector3(0,0,0);
+let simSpeed = 1;
+let paused = false;
+let currentPlanetInfo = null;
+let focusedPlanetId = null;
+
+// Camera look (cockpit mode during travel)
+let cockpitMode = false;
+let cockpitYaw = 0, cockpitPitch = 0;
+
+// Travel state
+let travelFrom = new THREE.Vector3();
+let travelTo = new THREE.Vector3();
+let travelProgress = 0;
+let travelDuration = 0;
+let travelTargetId = null;
+let travelCallback = null;
+
+// Photos
+const photos = []; // {canvas, label, location, dist}
+
+// Orbit control
+let isDragging=false,lastMouse={x:0,y:0};
+
+function updateCamera(){
+  if(cockpitMode) return;
+  const x=orbitTarget.x+spherical.r*Math.sin(spherical.phi)*Math.sin(spherical.theta);
+  const y=orbitTarget.y+spherical.r*Math.cos(spherical.phi);
+  const z=orbitTarget.z+spherical.r*Math.sin(spherical.phi)*Math.cos(spherical.theta);
+  camera.position.set(x,y,z);camera.lookAt(orbitTarget);
+}
+updateCamera();
+
+canvas.addEventListener('mousedown',e=>{isDragging=true;lastMouse={x:e.clientX,y:e.clientY};clickStart={x:e.clientX,y:e.clientY};});
+window.addEventListener('mousemove',e=>{
+  if(isDragging&&!cockpitMode){
+    const dx=e.clientX-lastMouse.x,dy=e.clientY-lastMouse.y;
+    lastMouse={x:e.clientX,y:e.clientY};
+    spherical.theta-=dx*.004;
+    spherical.phi=Math.max(.05,Math.min(Math.PI-.05,spherical.phi-dy*.004));
+    updateCamera();
+  }
+  if(cockpitMode){
+    if(isDragging){
+      cockpitYaw+=(e.clientX-lastMouse.x)*.003;
+      cockpitPitch=Math.max(-1.1,Math.min(1.1,cockpitPitch-(e.clientY-lastMouse.y)*.003));
+      lastMouse={x:e.clientX,y:e.clientY};
+    }
+  }
+});
+let clickStart={x:0,y:0};
+window.addEventListener('mouseup',e=>{
+  if(isDragging){
+    if(Math.abs(e.clientX-clickStart.x)<5&&Math.abs(e.clientY-clickStart.y)<5) handleClick(e.clientX,e.clientY);
+    isDragging=false;
+  }
+});
+canvas.addEventListener('wheel',e=>{
+  if(cockpitMode)return;
+  spherical.r=Math.max(30,Math.min(80000000,spherical.r*(e.deltaY>0?1.12:.89)));
+  updateCamera();
+},{passive:true});
+
+// Raycasting
+const raycaster=new THREE.Raycaster();
+const mouse=new THREE.Vector2();
+function handleClick(mx,my){
+  if(camState!=='orbit')return;
+  mouse.x=(mx/innerWidth)*2-1;mouse.y=-(my/innerHeight)*2+1;
+  raycaster.setFromCamera(mouse,camera);
+  const meshArr=Object.values(planetMeshes);
+  const hits=raycaster.intersectObjects(meshArr,false);
+  if(hits.length){
+    const pid=hits[0].object.userData.planetId;
+    if(pid) showInfoPanel(pid);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// INFO PANEL
+// ═══════════════════════════════════════════════════════════════════════
+function showInfoPanel(planetId){
+  const pd=PLANET_MAP[planetId];
+  if(!pd)return;
+  currentPlanetInfo=pd;
+  const panel=document.getElementById('info-panel');
+  const dot=document.getElementById('info-dot');
+  dot.style.background=`radial-gradient(circle at 35% 35%,#fff,${pd.colorHex},#000)`;
+  dot.style.boxShadow=`0 0 18px 4px ${pd.colorHex}44`;
+  document.getElementById('info-name-en').textContent=pd.nameEn;
+  document.getElementById('info-name-ja').textContent=pd.nameJa;
+  document.getElementById('info-facts').innerHTML=
+    pd.facts.map(([k,v])=>`<div class="info-fact"><span class="info-fk">${k}</span><span class="info-fv">${v}</span></div>`).join('');
+  document.getElementById('travel-btn').style.display=pd.noTravel?'none':'block';
+  panel.classList.add('show');
+}
+document.getElementById('info-close').addEventListener('click',()=>{
+  document.getElementById('info-panel').classList.remove('show');currentPlanetInfo=null;
+});
+document.getElementById('travel-btn').addEventListener('click',()=>{
+  if(currentPlanetInfo) startLanding(currentPlanetInfo.id);
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// DESTINATION MENU
+// ═══════════════════════════════════════════════════════════════════════
+function buildDestMenu(){
+  const menu=document.getElementById('dest-menu');
+  // skip sun (index 0), add heliopause and alpha centauri
+  const destinations=[...PLANETS.slice(1)];
+  destinations.forEach(pd=>{
+    const btn=document.createElement('button');
+    btn.className='dest-btn';
+    btn.textContent=`${pd.nameJa}  ${pd.orbitR>100000?'（遠距離）':''}`;
+    if(pd.isStar) btn.className+=' far';
+    btn.dataset.id=pd.id;
+    btn.addEventListener('click',()=>{
+      navigateTo(pd.id);
+      document.getElementById('dest-menu').classList.remove('show');
+    });
+    menu.appendChild(btn);
+  });
+}
+buildDestMenu();
+document.getElementById('nav-btn').addEventListener('click',()=>{
+  const m=document.getElementById('dest-menu');
+  m.classList.toggle('show');
+});
+
+function navigateTo(planetId){
+  if(camState!=='orbit')return;
+  const pd=PLANET_MAP[planetId];
+  if(!pd)return;
+  document.getElementById('info-panel').classList.remove('show');
+  // Focus camera on planet
+  let targetPos;
+  if(pd.orbitR===0){
+    targetPos=new THREE.Vector3(0,0,0);
+  } else if(pd.isBoundary){
+    targetPos=new THREE.Vector3(pd.orbitR,0,0);
+  } else if(pd.isStar){
+    // Just move far out
+    targetPos=new THREE.Vector3(pd.orbitR,0,0);
+  } else {
+    const m=planetMeshes[pd.id];
+    if(m) targetPos=m.getWorldPosition(new THREE.Vector3());
+    else targetPos=new THREE.Vector3(pd.orbitR,0,0);
+  }
+  // Animate camera to focus
+  const startTarget=orbitTarget.clone();
+  const startR=spherical.r;
+  const targetR=pd.r>0?pd.r*12+30:pd.orbitR*.5;
+  let t=0;
+  function fly(){
+    t=Math.min(1,t+.018);
+    const e=t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+    orbitTarget.lerpVectors(startTarget,targetPos,e);
+    spherical.r=lerp(startR,targetR,e);
+    updateCamera();
+    if(t<1)requestAnimationFrame(fly);
+    else showInfoPanel(planetId);
+  }
+  requestAnimationFrame(fly);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPEED CONTROL
+// ═══════════════════════════════════════════════════════════════════════
+const speedVals=[0,.1,.5,1,5,10,50,100,1000,10000,100000];
+document.getElementById('speed-range').addEventListener('input',e=>{
+  const idx=Math.round(+e.target.value/5*(speedVals.length-1));
+  simSpeed=speedVals[Math.min(idx,speedVals.length-1)];
+  const disp=simSpeed>=1?`×${simSpeed}`:simSpeed===0?'停止':`×${simSpeed}`;
+  document.getElementById('speed-val').textContent=disp;
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// NAV INFO UPDATE
+// ═══════════════════════════════════════════════════════════════════════
+function formatDist(d){
+  if(d<1000)return`${d.toFixed(1)} units`;
+  if(d<1e6)return`${(d/1000).toFixed(1)} k units`;
+  if(d<EARTH_ORBIT*1000)return`${(d/EARTH_ORBIT).toFixed(2)} AU`;
+  return`${(d/(EARTH_ORBIT*63241)).toFixed(3)} 光年`;
+}
+function formatLight(d){
+  const au=d/EARTH_ORBIT;
+  const minutes=au*8.317;
+  if(minutes<1)return`${(minutes*60).toFixed(0)}秒`;
+  if(minutes<60)return`${minutes.toFixed(1)}分`;
+  if(minutes<1440)return`${(minutes/60).toFixed(1)}時間`;
+  if(minutes<525600)return`${(minutes/1440).toFixed(1)}日`;
+  return`${(minutes/525600).toFixed(2)}年`;
+}
+function updateNavInfo(){
+  const cp=camera.position;
+  const dist=cp.length();
+  // find nearest
+  let nearest=null,minD=Infinity;
+  PLANETS.forEach(pd=>{
+    if(pd.r===0)return;
+    const m=planetMeshes[pd.id];
+    if(!m)return;
+    const d=m.getWorldPosition(new THREE.Vector3()).distanceTo(cp);
+    if(d<minD){minD=d;nearest=pd;}
+  });
+  document.getElementById('nav-dest').textContent=`近傍: ${nearest?nearest.nameJa:'—'}`;
+  document.getElementById('nav-dist').textContent=`太陽から: ${formatDist(dist)}`;
+  document.getElementById('nav-light').textContent=`光で: ${formatLight(dist)}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PHOTO SYSTEM
+// ═══════════════════════════════════════════════════════════════════════
+function takePhoto(){
+  // Snapshot the main canvas
+  renderer.render(scene,camera);
+  const snap=document.createElement('canvas');
+  snap.width=canvas.width;snap.height=canvas.height;
+  const ctx2=snap.getContext('2d');
+  ctx2.drawImage(canvas,0,0);
+
+  // Generate label
+  const cp=camera.position;
+  const dist=cp.length();
+  const au=dist/EARTH_ORBIT;
+  let location='宇宙空間';
+  let nearest=null,minD=Infinity;
+  PLANETS.forEach(pd=>{
+    if(pd.r===0)return;
+    const m=planetMeshes[pd.id];
+    if(!m)return;
+    const d=m.getWorldPosition(new THREE.Vector3()).distanceTo(cp);
+    if(d<minD){minD=d;nearest=pd;}
+  });
+  if(nearest&&minD<nearest.r*5) location=`${nearest.nameJa}付近`;
+  else if(au>100000) location='恒星間空間';
+  else if(au>100) location='ヘリオポーズ付近';
+
+  const titles=[
+    `${location}からの眺め`,
+    `${location}にて、静寂の中で`,
+    `${location}から見た宇宙`,
+    `${location}——光年の彼方で`,
+  ];
+  const label=titles[Math.floor(Math.random()*titles.length)];
+  const distLabel=au>100000?`${(au/63241).toFixed(2)}光年`:`${au.toFixed(1)} AU`;
+
+  photos.push({canvas:snap,label,location,dist:distLabel});
+  document.getElementById('photo-count').textContent=`📸 ${photos.length}枚`;
+  updateAlbum();
+
+  // Flash
+  const flash=document.getElementById('flash');
+  flash.style.opacity='1';setTimeout(()=>flash.style.opacity='0',200);
+  showMsg(`📸 撮影完了\n${label}`,1500);
+}
+
+document.getElementById('photo-btn').addEventListener('click',takePhoto);
+
+// ═══════════════════════════════════════════════════════════════════════
+// ALBUM
+// ═══════════════════════════════════════════════════════════════════════
+function updateAlbum(){
+  const grid=document.getElementById('album-grid');
+  grid.innerHTML='';
+  // Show slots for key locations
+  const slots=[
+    {id:'earth_orbit',label:'地球軌道から'},
+    {id:'mars_surface',label:'火星地表から'},
+    {id:'jupiter_flyby',label:'木星フライバイ'},
+    {id:'saturn_rings',label:'土星リングから'},
+    {id:'heliopause',label:'ヘリオポーズにて'},
+    {id:'alpha_centauri',label:'ケンタウルス座αから'},
+    ...photos.slice(0,6).map((_,i)=>({id:`custom_${i}`,label:'旅の記録'})),
+  ];
+  // Show actual photos + empty slots
+  photos.forEach((ph,i)=>{
+    const slot=document.createElement('div');slot.className='album-slot';
+    const c=document.createElement('canvas');
+    c.width=240;c.height=135;
+    const ctx2=c.getContext('2d');
+    ctx2.drawImage(ph.canvas,0,0,240,135);
+    slot.appendChild(c);
+    const lbl=document.createElement('div');lbl.className='slot-label';
+    lbl.textContent=`${ph.label}\n${ph.dist}`;
+    slot.appendChild(lbl);grid.appendChild(slot);
+  });
+  // Empty slots
+  const emptyCount=Math.max(0,6-photos.length);
+  for(let i=0;i<emptyCount;i++){
+    const slot=document.createElement('div');slot.className='album-slot';
+    slot.innerHTML=`<div class="slot-empty"><div class="slot-empty-icon">📷</div><div>未撮影</div></div>`;
+    grid.appendChild(slot);
+  }
+}
+updateAlbum();
+document.getElementById('album-btn').addEventListener('click',()=>{
+  document.getElementById('album').classList.toggle('show');
+});
+document.getElementById('album-close').addEventListener('click',()=>{
+  document.getElementById('album').classList.remove('show');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// MSG OVERLAY
+// ═══════════════════════════════════════════════════════════════════════
+let msgTimer=null;
+function showMsg(text,duration=3000,color='#fff'){
+  clearTimeout(msgTimer);
+  const [line1,...rest]=text.split('\n');
+  document.getElementById('msg-title').textContent=line1;
+  document.getElementById('msg-title').style.color=color;
+  document.getElementById('msg-sub').innerHTML=rest.join('<br>');
+  const ov=document.getElementById('msg-overlay');
+  ov.style.transition='opacity .5s';ov.style.opacity='1';
+  msgTimer=setTimeout(()=>{ ov.style.opacity='0'; },duration);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// LANDING SEQUENCE
+// ═══════════════════════════════════════════════════════════════════════
+const slCanvas=document.getElementById('speed-lines-c');
+const slCtx=slCanvas.getContext('2d');
+slCanvas.width=innerWidth;slCanvas.height=innerHeight;
+
+function drawSpeedLines(progress,alpha){
+  slCtx.clearRect(0,0,innerWidth,innerHeight);
+  const cx=innerWidth/2,cy=innerHeight/2;
+  for(let i=0;i<80;i++){
+    const angle=i/80*Math.PI*2;
+    const len=40+progress*280*(Math.random()*.5+.75);
+    const startR=15+progress*80;const endR=startR+len;
+    const x1=cx+Math.cos(angle)*startR,y1=cy+Math.sin(angle)*startR;
+    const x2=cx+Math.cos(angle)*endR,y2=cy+Math.sin(angle)*endR;
+    const grd=slCtx.createLinearGradient(x1,y1,x2,y2);
+    grd.addColorStop(0,'rgba(180,220,255,0)');grd.addColorStop(.5,`rgba(180,220,255,${alpha*.4})`);grd.addColorStop(1,`rgba(255,255,255,${alpha})`);
+    slCtx.beginPath();slCtx.moveTo(x1,y1);slCtx.lineTo(x2,y2);slCtx.strokeStyle=grd;slCtx.lineWidth=Math.random()*1.2+.2;slCtx.stroke();
+  }
+}
+
+function startLanding(planetId){
+  if(camState!=='orbit')return;
+  camState='landing';
+  document.getElementById('info-panel').classList.remove('show');
+  const pd=PLANET_MAP[planetId];
+  const mesh=planetMeshes[planetId];
+  if(!mesh){camState='orbit';return;}
+
+  const planetPos=mesh.getWorldPosition(new THREE.Vector3());
+  const startR=spherical.r;
+  const startTarget=orbitTarget.clone();
+
+  // Phase 1: zoom in (2s)
+  let t=0;
+  const phase1=()=>{
+    t=Math.min(1,t+.012);
+    const e=1-(1-t)*(1-t);
+    orbitTarget.lerpVectors(startTarget,planetPos,e*.5);
+    spherical.r=lerp(startR,pd.r*3,e);
+    updateCamera();
+    if(t<1){requestAnimationFrame(phase1);}else{phase2();}
+  };
+  requestAnimationFrame(phase1);
+
+  // Phase 2: warp lines (1.2s)
+  function phase2(){
+    slCanvas.style.opacity='1';
+    let p=0;const p2s=performance.now();
+    function p2(){
+      p=Math.min(1,(performance.now()-p2s)/1200);
+      const e=p<.5?4*p*p*p:(p-1)*(2*p-2)*(2*p-2)+1;
+      drawSpeedLines(e,e);
+      document.getElementById('land-overlay').style.opacity=(e*.5).toString();
+      if(p<1)requestAnimationFrame(p2);else phase3();
+    }
+    requestAnimationFrame(p2);
+  }
+
+  // Phase 3: flash + message
+  function phase3(){
+    slCanvas.style.opacity='0';slCtx.clearRect(0,0,innerWidth,innerHeight);
+    const flash=document.getElementById('flash');
+    flash.style.transition='none';flash.style.opacity='1';
+    setTimeout(()=>{
+      flash.style.transition='opacity .6s';flash.style.opacity='0';
+      document.getElementById('land-overlay').style.opacity='0';
+      showMsg(`${pd.nameJa}\n着陸しました`,2200,pd.colorHex);
+      setTimeout(()=>{
+        camState='surface';
+        enterSurfaceMode(pd);
+      },800);
+    },80);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SURFACE MODE
+// ═══════════════════════════════════════════════════════════════════════
+function enterSurfaceMode(pd){
+  cockpitMode=true;
+  const mesh=planetMeshes[pd.id];
+  const planetPos=mesh.getWorldPosition(new THREE.Vector3());
+  // Position camera just above surface
+  const surfaceOffset=new THREE.Vector3(pd.r+pd.r*.01,0,0);
+  camera.position.copy(planetPos).add(surfaceOffset);
+  cockpitYaw=Math.PI; // look away from planet center
+  cockpitPitch=0;
+  showMsg(`${pd.nameJa}の地表\nドラッグで視点を動かせます`,3000,pd.colorHex);
+  // Add back button
+  const backBtn=document.createElement('button');
+  backBtn.className='hud-btn';backBtn.textContent='🚀 宇宙へ戻る';backBtn.id='back-surface';
+  backBtn.style.cssText='pointer-events:all;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:20;';
+  document.body.appendChild(backBtn);
+  backBtn.addEventListener('click',()=>{
+    document.body.removeChild(backBtn);
+    cockpitMode=false;
+    camState='orbit';
+    orbitTarget.copy(planetPos);
+    spherical.r=pd.r*8;
+    updateCamera();
+    showMsg('宇宙へ帰還しました',2000);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SPECIAL EVENTS (Heliopause, Alpha Centauri reached)
+// ═══════════════════════════════════════════════════════════════════════
+const HP_DIST = PLANET_MAP['heliopause'].orbitR;
+const AC_DIST = PLANET_MAP['alpha_centauri'].orbitR;
+let hpTriggered=false, acTriggered=false;
+
+function checkSpecialEvents(){
+  const dist=camera.position.length();
+  if(!hpTriggered&&dist>HP_DIST*.95&&dist<HP_DIST*1.2){
+    hpTriggered=true;
+    showMsg('ヘリオポーズを越えた\n太陽系の外へ——恒星間空間に到達',5000,'#4488cc');
+    setTimeout(()=>{
+      showMsg('地球まで光で16.6時間\n太陽系全体が後ろに小さくなっていく',4000,'#8ab');
+    },6000);
+  }
+  if(!acTriggered&&dist>AC_DIST*.8){
+    acTriggered=true;
+    triggerAlphaCentauri();
+  }
+}
+
+function triggerAlphaCentauri(){
+  // Flash star system
+  showMsg('ケンタウルス座α星系に到達\nここから太陽系はPale Yellow Dotに見える',5000,'#ffe0a0');
+  setTimeout(()=>{
+    // Show return choice
+    const choice=document.createElement('div');
+    choice.style.cssText='position:fixed;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(0,0,0,.7);backdrop-filter:blur(6px)';
+    choice.innerHTML=`
+      <div style="font-size:14px;color:#ffe0a0;letter-spacing:.2em;margin-bottom:8px">ケンタウルス座 α 星系</div>
+      <div style="font-size:28px;font-weight:bold;color:#fff;margin-bottom:8px">太陽から 4.24 光年</div>
+      <div style="font-size:13px;color:#8ab;letter-spacing:.08em;margin-bottom:40px;line-height:1.8">振り返ると——太陽系が Pale Yellow Dot として輝いている<br>ここからあなたはどうしますか？</div>
+      <div style="display:flex;gap:20px">
+        <button id="choice-return" style="padding:12px 28px;border:1px solid rgba(79,195,247,.6);border-radius:24px;background:rgba(79,195,247,.15);color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em">🏠 地球へ帰還する</button>
+        <button id="choice-ahead" style="padding:12px 28px;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(255,255,255,.05);color:#8ab;font-size:13px;cursor:pointer;letter-spacing:.1em">▶ 先へ進む</button>
+      </div>
+    `;
+    document.body.appendChild(choice);
+    document.getElementById('choice-return').addEventListener('click',()=>{
+      document.body.removeChild(choice);startReturnJourney();
+    });
+    document.getElementById('choice-ahead').addEventListener('click',()=>{
+      document.body.removeChild(choice);
+      showMsg('さらに先の宇宙へ……\nでも、帰る場所は一つしかない',4000,'#8ab');
+    });
+  },6000);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// RETURN JOURNEY (帰還シーケンス)
+// ═══════════════════════════════════════════════════════════════════════
+function startReturnJourney(){
+  camState='returning';
+  cockpitMode=false;
+  showMsg('地球へ——帰還の旅が始まる',3000,'#4fc3f7');
+
+  // Montage of key places
+  const keyPlaces=[
+    {id:'neptune',msg:'海王星軌道——太陽系の最果て'},
+    {id:'saturn', msg:'土星——リングの美しさよ、さらば'},
+    {id:'jupiter',msg:'木星——嵐は今日も続いている'},
+    {id:'mars',   msg:'火星——赤い星が近づいてくる'},
+    {id:'earth',  msg:'地球——見えてきた。あの青い点が'},
+  ];
+
+  let idx=0;
+  let elapsed=0;
+  const montageInterval=3500;
+
+  function nextMontage(){
+    if(idx>=keyPlaces.length){startReentry();return;}
+    const kp=keyPlaces[idx++];
+    const m=planetMeshes[kp.id];
+    if(m){
+      const pos=m.getWorldPosition(new THREE.Vector3());
+      orbitTarget.copy(pos);
+      spherical.r=PLANET_MAP[kp.id].r*15+50;
+      spherical.theta+=1.2;
+      updateCamera();
+    }
+    showMsg(kp.msg,2500,'#b0c8e8');
+    setTimeout(nextMontage,montageInterval);
+  }
+
+  setTimeout(nextMontage,3500);
+}
+
+function startReentry(){
+  camState='reentry';
+  const earth=planetMeshes['earth'];
+  const earthPos=earth.getWorldPosition(new THREE.Vector3());
+
+  // Zoom into earth dramatically
+  showMsg('大気圏突入\n高度 80km  速度 11.2 km/s',2500,'#ff8844');
+  orbitTarget.copy(earthPos);
+
+  let t=0;
+  const startR=spherical.r;
+  function zoomIn(){
+    t=Math.min(1,t+.008);
+    const e=t*t;
+    spherical.r=lerp(startR,PLANET_MAP['earth'].r*.5,e);
+    updateCamera();
+    if(t<1){requestAnimationFrame(zoomIn);}
+    else{
+      // Fire effect overlay
+      const fireEl=document.createElement('div');
+      fireEl.style.cssText=`position:fixed;inset:0;z-index:55;background:radial-gradient(ellipse,rgba(255,120,0,.0) 30%,rgba(255,60,0,.5) 70%,rgba(255,200,0,.2) 100%);pointer-events:none;opacity:0;transition:opacity .3s`;
+      document.body.appendChild(fireEl);
+      setTimeout(()=>{fireEl.style.opacity='1';},100);
+      showMsg('炎の中——地球へ',2000,'#ff6622');
+      setTimeout(()=>{
+        fireEl.style.transition='opacity 1.5s';fireEl.style.opacity='0';
+        setTimeout(()=>{
+          document.body.removeChild(fireEl);
+          triggerEnding();
+        },1600);
+      },2500);
+    }
+  }
+  setTimeout(()=>requestAnimationFrame(zoomIn),2800);
+}
+
+function triggerEnding(){
+  camState='ending';
+  // Final beautiful view of Earth from surface level
+  const earth=planetMeshes['earth'];
+  const ep=earth.getWorldPosition(new THREE.Vector3());
+  camera.position.copy(ep).add(new THREE.Vector3(PLANET_MAP['earth'].r+PLANET_MAP['earth'].r*.015,0,0));
+  cockpitMode=true;cockpitYaw=Math.PI;cockpitPitch=0.2;
+
+  setTimeout(()=>{
+    const ending=document.getElementById('ending');
+    ending.classList.add('show');
+    const textEl=document.getElementById('ending-text');
+    textEl.innerHTML=`
+      <div style="font-size:11px;letter-spacing:.3em;color:#446;margin-bottom:20px">THE JOURNEY IS COMPLETE</div>
+      <div style="font-size:18px;color:#fff;line-height:2;margin-bottom:16px">
+        「われわれの惑星は、広大な宇宙という闇の中に浮かぶ、<br>
+        孤独な一点の塵に過ぎない。」
+      </div>
+      <div style="font-size:13px;color:#8ab;line-height:1.9;margin-bottom:16px">
+        太陽から 4.24 光年の旅を経て、あなたは帰ってきた。<br>
+        地球は、旅の前と同じ場所にある。<br>
+        でも——あなたの目に映る地球は、もう変わっている。
+      </div>
+      <div style="font-size:15px;color:#4fc3f7;line-height:2;">
+        「お互いをもっと大切にし、われわれが唯一の故郷である、<br>
+        <span class="highlight">この淡い青い点を、守り慈しまなければならない。</span>」<br>
+        <span style="font-size:11px;color:#446;letter-spacing:.12em">— カール・セーガン  1990</span>
+      </div>
+    `;
+    // Show photos
+    const photosEl=document.getElementById('ending-photos');
+    photosEl.innerHTML='';
+    photos.slice(-6).forEach(ph=>{
+      const c=document.createElement('canvas');c.width=160;c.height=90;
+      c.getContext('2d').drawImage(ph.canvas,0,0,160,90);
+      photosEl.appendChild(c);
+    });
+    if(photos.length===0){
+      photosEl.innerHTML='<div style="color:#334;font-size:12px">旅の写真がありません。次回は📷でたくさん撮影しましょう。</div>';
+    }
+  },2000);
+}
+
+document.getElementById('ending-restart').addEventListener('click',()=>{
+  location.reload();
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════════════════
+const clock=new THREE.Clock();
+const rotSpeeds=[0,.004,-.002,.004,.004,.01,.009,.007,.007];
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.05);
+  const s=simSpeed;
+
+  // Orbit planets
+  PLANETS.forEach((pd,i)=>{
+    if(pd.r===0||pd.isBoundary||pd.isStar)return;
+    const m=planetMeshes[pd.id];if(!m)return;
+    const orbitSpeed=pd.period>0?(2*Math.PI/(pd.period*.8)):0;
+    orbitAngles[pd.id]+=(orbitSpeed*dt*s);
+    const a=orbitAngles[pd.id];
+    m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
+    // self rotation
+    m.rotation.y+=rotSpeeds[i]*s*(pd.id==='venus'?-1:1);
+    // clouds
+    m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
+  });
+  // Sun rotation
+  if(planetMeshes['sun'])planetMeshes['sun'].rotation.y+=.005*dt;
+
+  // Cockpit camera
+  if(cockpitMode){
+    camera.rotation.set(cockpitPitch,cockpitYaw,0,'YXZ');
+  }
+
+  // Check special events
+  if(camState==='orbit')checkSpecialEvents();
+
+  // Update HUD
+  updateNavInfo();
+
+  renderer.render(scene,camera);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// STARTUP
+// ═══════════════════════════════════════════════════════════════════════
+setProgress(100);
+
+// Initial camera: overview of solar system
+orbitTarget.set(0,0,0);
+spherical.r=3000;
+updateCamera();
+
+setTimeout(()=>{
+  document.getElementById('loading').style.opacity='0';
+  setTimeout(()=>{document.getElementById('loading').style.display='none';},600);
+  animate();
+  showMsg('PALE BLUE DOT\n太陽系から隣の星系まで——旅を始めよう',4000,'#4fc3f7');
+},400);
+</script>
+</body>
+</html>
