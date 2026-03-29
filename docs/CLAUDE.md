@@ -80,31 +80,33 @@ pale_blue_dot_delivery/
 - 大気圏突入エフェクト
 - エンディング（セーガンの言葉＋写真スライドショー）
 
-### ❌ 未実装（優先順で）
+**地表ビューシステム**
+- 全9惑星の地表環境描画（Canvas 2D API）
+- 土星の嵐アニメーション（粒子+稲妻）→「嵐を収める」インタラクション
+- 着陸時コックピット廃止・地表視点に完全移行
 
-**Phase 1（最初に取り組む）**
-- 惑星テクスチャの高解像度化（solar_system_visualizer.htmlから移植）
-- 宇宙船の視覚的表現
-- ヘリオポーズ〜ケンタウルス座αのスケール切替（AU↔光年）
-- 時間加速時の惑星軌道の正確な計算
+**アルバム強化**
+- 9枠固定カードグリッド（未撮影はNo Photo）
+- 写真カードにタイトル・場所・日時表示
+- 写真ダウンロード機能（💾 保存ボタン）
+- 戻るボタン追加
+- キャッシュクリア検知によるIndexedDB自動削除
 
-**Phase 2**
-- Pale Blue Dot図鑑（12枠コレクション）
-- 各惑星からの「他の惑星の見え方」計算
-- 写真のIndexedDB保存
+**操作・UI**
+- Ctrl+ホイールでカーソル方向への自由ズーム
+- 全惑星・太陽のリアルタイム自転アニメーション（地軸傾き反映）
+- 情報パネルのアイコンが実テクスチャ＋自転アニメーション
+- ケンタウルス座α目的地ボタンのスタイル統一
 
-**Phase 3**
-- ケンタウルス座α星系の詳細表現
-- プロキシマbへの着陸・地表ビュー
-- ボイジャーモード
+### ❌ 未実装（残存タスク）
 
-**Phase 4**
-- サウンド実装（Web Audio API）
-- 環境音エンジン
-
-**Phase 5**
-- モバイル対応
-- パフォーマンス最適化
+**継続改善候補**
+- 宇宙船の視覚的表現（船体外観・コックピット内装）
+- ホーマン遷移軌道の視覚化
+- 重力アシスト演出
+- ボイジャーモード（実際の軌道データ）
+- Three.jsローカルバンドル（オフライン対応）
+- Lighthouse最適化
 
 ---
 
@@ -188,6 +190,36 @@ let camState = 'orbit';
 1. `solar_system_visualizer.html` から `texXxx()` 関数をコピー
 2. `warpFbm`, `lerp`, `clamp`, `mix3` ヘルパー関数も一緒にコピー
 3. プロトタイプの `TEXTURES.xxx` に代入する部分を更新
+
+---
+
+## 地表ビューシステムの設計
+
+### Surface Canvas
+`<canvas id="surface-canvas">` と `<div id="surface-ui">` が着陸時に表示される。
+
+コックピット（`#cockpit`）は廃止済み。代わりに `showSurfaceView(planetId)` / `hideSurfaceView()` で管理。
+
+### 惑星別設定
+各惑星の地表パラメータは `drawSurfaceView(planetId)` 内の `configs` オブジェクトで定義。
+空のグラデーション（skyTop/skyHorizon）・地面色（groundTop/groundBottom）・特殊演出（features）を指定。
+
+### 土星の嵐システム
+```javascript
+let saturnStormCalmed = false;  // 嵐が収まったかフラグ
+startSaturnStorm()  // 嵐パーティクル開始（80個+稲妻）
+animateStorm()      // rAFループ
+// 「嵐を収める」ボタン → saturnStormCalmed=true → drawSurfaceView('saturn')再描画
+// → drawSaturnRingsInSky() でリングを空に描画
+```
+
+### アルバムUIシステム
+```javascript
+// 9枠固定グリッド + オーバーフロー
+// 各スロットはphotoCard(photo, index)で生成
+// 保存: canvas.toBlob() → URL.createObjectURL() → <a download>
+// キャッシュ連動: localStorage 'pbd_session' フラグで起動時にDBをチェック
+```
 
 ---
 

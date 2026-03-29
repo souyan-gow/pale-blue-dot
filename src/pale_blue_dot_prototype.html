@@ -68,7 +68,14 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 .album-section-title{font-size:12px;color:#446;letter-spacing:.15em;margin:20px 0 12px;padding-bottom:6px;border-bottom:1px solid rgba(79,195,247,.1)}
 .album-progress{font-size:11px;color:#c9a227;margin-left:12px}
 #collection-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-#album-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:12px}
+#album-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.photo-card{border:1px solid rgba(79,195,247,.2);border-radius:10px;background:rgba(0,8,22,.6);padding:8px;display:flex;flex-direction:column;gap:6px}
+.photo-card-title{font-size:10px;color:#8ab;letter-spacing:.06em;line-height:1.3;min-height:28px}
+.photo-card-img{width:100%;aspect-ratio:16/9;overflow:hidden;border-radius:6px}
+.photo-card-img canvas{width:100%;height:100%;display:block;object-fit:cover}
+.photo-card-meta{font-size:9px;color:#446;letter-spacing:.05em}
+.photo-dl-btn{padding:4px 8px;border-radius:8px;border:1px solid rgba(79,195,247,.3);background:rgba(0,10,30,.6);color:#4fc3f7;font-size:10px;cursor:pointer;letter-spacing:.06em;transition:all .2s;align-self:flex-end}
+.photo-dl-btn:hover{background:rgba(79,195,247,.15)}
 .album-slot{border:1px solid rgba(79,195,247,.2);border-radius:10px;overflow:hidden;background:rgba(0,8,22,.6);aspect-ratio:16/9;position:relative;cursor:pointer}
 .album-slot.collected{border-color:rgba(201,162,39,.5);box-shadow:0 0 8px rgba(201,162,39,.15)}
 .album-slot canvas,.album-slot img{width:100%;height:100%;display:block;object-fit:cover}
@@ -135,7 +142,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
   #info-panel{right:8px;left:8px;width:auto;max-width:300px;transform:translateY(-50%)}
   #album-body{padding:0 12px 12px}
   #collection-grid{grid-template-columns:repeat(3,1fr);gap:6px}
-  #album-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
+  #album-grid{grid-template-columns:repeat(2,1fr);gap:8px}
   .album-slot .slot-label{font-size:9px;padding:4px 6px}
   #ckp-hud-left,#ckp-hud-right{bottom:52px}
   .ckp-readout{font-size:9px}
@@ -233,6 +240,14 @@ html,body{overscroll-behavior:none;touch-action:none}
   <div id="ckp-crosshair">+</div>
 </div>
 
+<!-- Surface view canvas -->
+<canvas id="surface-canvas" style="position:fixed;inset:0;z-index:15;display:none;width:100%;height:100%"></canvas>
+<div id="surface-ui" style="position:fixed;inset:0;z-index:16;display:none;pointer-events:none;">
+  <button id="surface-back-btn" style="pointer-events:all;position:absolute;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 28px;border:1px solid rgba(79,195,247,.5);border-radius:24px;background:rgba(0,8,20,.7);color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em;">🚀 宇宙へ戻る</button>
+  <div id="surface-info" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:12px;color:#8ab;letter-spacing:.1em;"></div>
+  <button id="saturn-storm-btn" style="display:none;pointer-events:all;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);padding:12px 28px;border:1px solid rgba(255,200,80,.5);border-radius:24px;background:rgba(20,10,0,.8);color:#ffc850;font-size:14px;cursor:pointer;letter-spacing:.1em;">⚡ 嵐を収める</button>
+</div>
+
 <!-- Speed lines canvas -->
 <canvas id="speed-lines-c"></canvas>
 <div id="land-overlay"></div>
@@ -242,6 +257,7 @@ html,body{overscroll-behavior:none;touch-action:none}
 <!-- Album -->
 <div id="album">
   <div id="album-header">
+    <button id="album-back-btn" style="background:none;border:none;color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.08em;padding:4px 8px;">← 戻る</button>
     <div id="album-title">📸 PALE BLUE DOT — アルバム</div>
     <button id="album-close">✕</button>
   </div>
@@ -270,23 +286,23 @@ const SUN_R = 109.3;
 const EARTH_ORBIT = 409.3;
 
 const PLANETS = [
-  { id:'sun',     nameJa:'太陽',    nameEn:'SUN',      color:0xFDB813, colorHex:'#FDB813', r:SUN_R,  orbitR:0,      period:0,    tilt:0,
+  { id:'sun',     nameJa:'太陽',    nameEn:'SUN',      color:0xFDB813, colorHex:'#FDB813', r:SUN_R,  orbitR:0,      period:0,    tilt:0,    rotSpeed:0.0005,
     facts:[['直径','1,392,700 km'],['表面温度','5,500 °C'],['年齢','約46億年']], noTravel:true },
-  { id:'mercury', nameJa:'水星',    nameEn:'MERCURY',  color:0x9a9a9a, colorHex:'#9a9a9a', r:0.383, orbitR:158.4,  period:2.4,  tilt:0.034,
+  { id:'mercury', nameJa:'水星',    nameEn:'MERCURY',  color:0x9a9a9a, colorHex:'#9a9a9a', r:0.383, orbitR:158.4,  period:2.4,  tilt:0.034, rotSpeed:0.00027,
     facts:[['直径','4,879 km'],['公転周期','87.97日'],['衛星数','0'],['平均温度','167°C']] },
-  { id:'venus',   nameJa:'金星',    nameEn:'VENUS',    color:0xd4a847, colorHex:'#d4a847', r:0.950, orbitR:295.9,  period:6.2,  tilt:177.4,
+  { id:'venus',   nameJa:'金星',    nameEn:'VENUS',    color:0xd4a847, colorHex:'#d4a847', r:0.950, orbitR:295.9,  period:6.2,  tilt:177.4, rotSpeed:-0.00012,
     facts:[['直径','12,104 km'],['公転周期','224.7日'],['衛星数','0'],['平均温度','464°C']] },
-  { id:'earth',   nameJa:'地球',    nameEn:'EARTH',    color:0x2a6fd4, colorHex:'#2a6fd4', r:1.000, orbitR:409.3,  period:10,   tilt:23.4,
+  { id:'earth',   nameJa:'地球',    nameEn:'EARTH',    color:0x2a6fd4, colorHex:'#2a6fd4', r:1.000, orbitR:409.3,  period:10,   tilt:23.4,  rotSpeed:0.005,
     facts:[['直径','12,742 km'],['公転周期','365.25日'],['衛星数','1'],['平均温度','15°C']] },
-  { id:'mars',    nameJa:'火星',    nameEn:'MARS',     color:0xb5391a, colorHex:'#b5391a', r:0.532, orbitR:623.8,  period:18.8, tilt:25.2,
+  { id:'mars',    nameJa:'火星',    nameEn:'MARS',     color:0xb5391a, colorHex:'#b5391a', r:0.532, orbitR:623.8,  period:18.8, tilt:25.2,  rotSpeed:0.0048,
     facts:[['直径','6,779 km'],['公転周期','686.97日'],['衛星数','2'],['平均温度','-65°C']] },
-  { id:'jupiter', nameJa:'木星',    nameEn:'JUPITER',  color:0xc4935a, colorHex:'#c4935a', r:10.973,orbitR:2129.6, period:118,  tilt:3.1,
+  { id:'jupiter', nameJa:'木星',    nameEn:'JUPITER',  color:0xc4935a, colorHex:'#c4935a', r:10.973,orbitR:2129.6, period:118,  tilt:3.1,   rotSpeed:0.012,
     facts:[['直径','139,820 km'],['公転周期','11.86年'],['衛星数','95'],['平均温度','-110°C']] },
-  { id:'saturn',  nameJa:'土星',    nameEn:'SATURN',   color:0xc8b560, colorHex:'#c8b560', r:9.140, orbitR:3903.5, period:295,  tilt:26.7, ring:true,
+  { id:'saturn',  nameJa:'土星',    nameEn:'SATURN',   color:0xc8b560, colorHex:'#c8b560', r:9.140, orbitR:3903.5, period:295,  tilt:26.7,  rotSpeed:0.011, ring:true,
     facts:[['直径','116,460 km'],['公転周期','29.46年'],['衛星数','146'],['平均温度','-140°C']] },
-  { id:'uranus',  nameJa:'天王星',  nameEn:'URANUS',   color:0x7acfcf, colorHex:'#7acfcf', r:3.981, orbitR:7854.5, period:840,  tilt:97.8,
+  { id:'uranus',  nameJa:'天王星',  nameEn:'URANUS',   color:0x7acfcf, colorHex:'#7acfcf', r:3.981, orbitR:7854.5, period:840,  tilt:97.8,  rotSpeed:-0.009,
     facts:[['直径','50,724 km'],['公転周期','84.01年'],['衛星数','28'],['平均温度','-195°C']] },
-  { id:'neptune', nameJa:'海王星',  nameEn:'NEPTUNE',  color:0x2f4db5, colorHex:'#2f4db5', r:3.865, orbitR:12307.7,period:1648, tilt:28.3,
+  { id:'neptune', nameJa:'海王星',  nameEn:'NEPTUNE',  color:0x2f4db5, colorHex:'#2f4db5', r:3.865, orbitR:12307.7,period:1648, tilt:28.3,  rotSpeed:0.0094,
     facts:[['直径','49,244 km'],['公転周期','164.8年'],['衛星数','16'],['平均温度','-200°C']] },
   { id:'heliopause',nameJa:'ヘリオポーズ',nameEn:'HELIOPAUSE',color:0x4488cc,colorHex:'#4488cc',r:0,orbitR:49128, period:0, tilt:0,
     facts:[['距離','120 AU'],['意味','太陽風の届かなくなる境界'],['到達','ボイジャー1号が2012年通過']], noTravel:true, isBoundary:true },
@@ -793,12 +809,15 @@ function updateAudio(){
   });
   if(nearPd&&minD<nearPd.r*10){
     const prox=1-clamp(minD/(nearPd.r*10),0,1);
-    audioNodes.proxGain.gain.linearRampToValueAtTime(prox*0.06,t+0.1);
+    audioNodes.proxGain.gain.linearRampToValueAtTime(prox*0.18,t+0.1);
     // Map planet color to frequency
     const freqMap={sun:220,mercury:330,venus:293,earth:261,mars:311,jupiter:174,saturn:196,uranus:349,neptune:392,proxima_b:440};
     const freq=freqMap[nearPd.id]||280;
     audioNodes.proxOsc.frequency.linearRampToValueAtTime(freq,t+0.1);
     audioNodes.proxFilter.frequency.linearRampToValueAtTime(freq*2,t+0.1);
+    // Modulate drone filter dramatically to make resonance clearly audible
+    const modFreq=droneFreq+prox*800*Math.sin(t*3.7);
+    audioNodes.droneFilter.frequency.linearRampToValueAtTime(clamp(modFreq,80,2000),t+0.15);
   }else{
     audioNodes.proxGain.gain.linearRampToValueAtTime(0,t+0.3);
   }
@@ -861,7 +880,7 @@ const orbitAngles = {};
 const selfRot = {};
 
 function buildPlanetMesh(pd){
-  if(pd.r===0||pd.isBoundary||pd.isStar||pd.isExoplanet) return;
+  if(pd.r===0||pd.isBoundary||pd.isStar) return;
   const tex = TEXTURES[pd.id] || null;
   const mat = new THREE.MeshStandardMaterial({
     map: tex, roughness:.85, metalness:.0
@@ -870,6 +889,8 @@ function buildPlanetMesh(pd){
   const mesh = new THREE.Mesh(geo, mat);
   mesh.castShadow = true;
   mesh.userData.planetId = pd.id;
+  // Apply axis tilt
+  if(pd.tilt) mesh.rotation.z = THREE.MathUtils.degToRad(pd.tilt);
 
   if(pd.id==='sun'){
     mesh.material = new THREE.MeshBasicMaterial({map:tex});
@@ -1149,9 +1170,26 @@ window.addEventListener('mouseup',e=>{
 });
 canvas.addEventListener('wheel',e=>{
   if(cockpitMode)return;
-  spherical.r=Math.max(30,Math.min(80000000,spherical.r*(e.deltaY>0?1.12:.89)));
-  updateCamera();
-},{passive:true});
+  if(e.ctrlKey){
+    e.preventDefault();
+    const delta=e.deltaY>0?1:-1;
+    const moveSpeed=spherical.r*0.08*delta;
+    const mouseVec=new THREE.Vector2(
+      (e.clientX/window.innerWidth)*2-1,
+      -(e.clientY/window.innerHeight)*2+1
+    );
+    const rc=new THREE.Raycaster();
+    rc.setFromCamera(mouseVec,camera);
+    const dir=rc.ray.direction.clone().multiplyScalar(moveSpeed);
+    camera.position.add(dir);
+    orbitTarget.add(dir.clone().multiplyScalar(0.3));
+    spherical.r=camera.position.distanceTo(orbitTarget);
+    spherical.r=Math.max(spherical.r,10);
+  } else {
+    spherical.r=Math.max(30,Math.min(80000000,spherical.r*(e.deltaY>0?1.12:.89)));
+    updateCamera();
+  }
+},{passive:false});
 
 // Touch events for mobile
 let touchStartDist=0;
@@ -1220,14 +1258,48 @@ function handleClick(mx,my){
 // ═══════════════════════════════════════════════════════════════════════
 // INFO PANEL
 // ═══════════════════════════════════════════════════════════════════════
+let infoDotAnimId=null;
 function showInfoPanel(planetId){
   const pd=PLANET_MAP[planetId];
   if(!pd)return;
   currentPlanetInfo=pd;
   const panel=document.getElementById('info-panel');
   const dot=document.getElementById('info-dot');
-  dot.style.background=`radial-gradient(circle at 35% 35%,#fff,${pd.colorHex},#000)`;
+  dot.innerHTML='';
+  dot.style.background='none';
   dot.style.boxShadow=`0 0 18px 4px ${pd.colorHex}44`;
+  // Create canvas icon with planet texture
+  const ic=document.createElement('canvas');
+  ic.width=48;ic.height=48;
+  dot.appendChild(ic);
+  const ictx=ic.getContext('2d');
+  // Cancel previous animation
+  if(infoDotAnimId){cancelAnimationFrame(infoDotAnimId);infoDotAnimId=null;}
+  let iconAngle=0;
+  const texKey=pd.id;
+  const srcTex=TEXTURES[texKey];
+  function drawIconFrame(){
+    ictx.clearRect(0,0,48,48);
+    ictx.save();
+    ictx.beginPath();ictx.arc(24,24,22,0,Math.PI*2);ictx.clip();
+    if(srcTex&&srcTex.image){
+      const img=srcTex.image;
+      const iw=img.width||256,ih=img.height||256;
+      const offsetX=((iconAngle/(Math.PI*2))*iw)%iw;
+      ictx.drawImage(img,offsetX,0,iw-offsetX,ih,-22,0,44*(iw-offsetX)/iw,44);
+      if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,-22+44*(iw-offsetX)/iw,0,44*offsetX/iw,44);
+    } else {
+      const g=ictx.createRadialGradient(18,14,2,24,24,22);
+      g.addColorStop(0,'#fff');g.addColorStop(0.4,pd.colorHex);g.addColorStop(1,'#000');
+      ictx.fillStyle=g;ictx.fillRect(2,2,44,44);
+    }
+    ictx.restore();
+    iconAngle+=0.015;
+    if(document.getElementById('info-panel').classList.contains('show')){
+      infoDotAnimId=requestAnimationFrame(drawIconFrame);
+    }
+  }
+  drawIconFrame();
   document.getElementById('info-name-en').textContent=pd.nameEn;
   document.getElementById('info-name-ja').textContent=pd.nameJa;
   document.getElementById('info-facts').innerHTML=
@@ -1237,6 +1309,7 @@ function showInfoPanel(planetId){
 }
 document.getElementById('info-close').addEventListener('click',()=>{
   document.getElementById('info-panel').classList.remove('show');currentPlanetInfo=null;
+  if(infoDotAnimId){cancelAnimationFrame(infoDotAnimId);infoDotAnimId=null;}
 });
 document.getElementById('travel-btn').addEventListener('click',()=>{
   if(currentPlanetInfo) startLanding(currentPlanetInfo.id);
@@ -1252,8 +1325,8 @@ function buildDestMenu(){
   destinations.forEach(pd=>{
     const btn=document.createElement('button');
     btn.className='dest-btn';
-    btn.textContent=`${pd.nameJa}  ${pd.orbitR>100000?'（遠距離）':''}`;
-    if(pd.isStar) btn.className+=' far';
+    const starPrefix=pd.isStar?'⭐ ':'';
+    btn.textContent=`${starPrefix}${pd.nameJa}  ${pd.orbitR>100000?'（遠距離）':''}`;
     btn.dataset.id=pd.id;
     btn.addEventListener('click',()=>{
       navigateTo(pd.id);
@@ -1453,14 +1526,23 @@ const COLLECTION_SLOTS=[
 const collectionMap={}; // slotId -> photo data (filled from DB or new captures)
 
 function detectSlotId(location, au, nearestId, camSt){
-  if(nearestId==='mercury'&&au<1)   return 'mercury_view';
-  if(nearestId==='venus'&&au<2)     return 'venus_view';
-  if(nearestId==='earth'&&au<2)     return 'earth_view';
-  if(nearestId==='mars'&&au<3)      return 'mars_view';
-  if(nearestId==='jupiter'&&au<10)  return 'jupiter_view';
-  if(nearestId==='saturn'&&au<20)   return 'saturn_view';
-  if(nearestId==='uranus'&&au<40)   return 'uranus_view';
-  if(nearestId==='neptune'&&au<60)  return 'neptune_view';
+  // Check proximity to nearest planet directly
+  if(nearestId){
+    const pd=PLANET_MAP[nearestId];
+    const m=planetMeshes[nearestId];
+    if(pd&&m){
+      const dist=m.getWorldPosition(new THREE.Vector3()).distanceTo(camera.position);
+      const closeEnough=dist<Math.max(pd.r*8,pd.r+5);
+      if(nearestId==='mercury'&&closeEnough) return 'mercury_view';
+      if(nearestId==='venus'&&closeEnough)   return 'venus_view';
+      if(nearestId==='earth'&&closeEnough)   return 'earth_view';
+      if(nearestId==='mars'&&closeEnough)    return 'mars_view';
+      if(nearestId==='jupiter'&&closeEnough) return 'jupiter_view';
+      if(nearestId==='saturn'&&closeEnough)  return 'saturn_view';
+      if(nearestId==='uranus'&&closeEnough)  return 'uranus_view';
+      if(nearestId==='neptune'&&closeEnough) return 'neptune_view';
+    }
+  }
   if(au>100&&au<1000)               return 'heliopause';
   if(au>100000)                     return 'pale_blue_dot';
   if(au>1000&&au<=100000)           return 'interstellar';
@@ -1527,7 +1609,7 @@ function takePhoto(){
         timestamp:Date.now(),
       };
       // Save to in-memory array
-      photos.push({canvas:snap,label,location,dist:distLabel,slotId:photoData.slotId});
+      photos.push({canvas:snap,label,location,dist:distLabel,slotId:photoData.slotId,timestamp:photoData.timestamp});
 
       // Check collection
       let collectionMsg='';
@@ -1539,7 +1621,7 @@ function takePhoto(){
 
       // Persist to IndexedDB
       if(photoDB){
-        dbSavePhoto(photoData).catch(e=>console.warn('Photo save failed:',e));
+        dbSavePhoto(photoData).then(()=>updateAlbum()).catch(e=>console.warn('Photo save failed:',e));
       }
 
       document.getElementById('photo-count').textContent=`📸 ${photos.length}枚`;
@@ -1547,10 +1629,9 @@ function takePhoto(){
       showMsg(`📸 撮影完了\n${label}${collectionMsg}`,collectionMsg?3000:1500);
     };
     reader.readAsDataURL(blob);
-  },'image/jpeg',0.85);
+  },'image/jpeg',0.92);
 
-  // Flash + shutter sound
-  playSfx('shutter');
+  // Flash
   const flash=document.getElementById('flash');
   flash.style.opacity='1';setTimeout(()=>flash.style.opacity='0',200);
 }
@@ -1583,31 +1664,75 @@ function updateAlbum(){
   });
   document.getElementById('collection-progress').textContent=`${collected} / 12`;
 
-  // Photo log grid
+  // Photo log grid — 9 fixed slots + overflow
   const grid=document.getElementById('album-grid');
   grid.innerHTML='';
-  photos.forEach((ph,i)=>{
-    const slot=document.createElement('div');slot.className='album-slot';
-    const c=document.createElement('canvas');
-    c.width=240;c.height=135;
-    const ctx2=c.getContext('2d');
-    ctx2.drawImage(ph.canvas,0,0,240,135);
-    slot.appendChild(c);
-    const lbl=document.createElement('div');lbl.className='slot-label';
-    lbl.textContent=`${ph.label}\n${ph.dist}`;
-    slot.appendChild(lbl);grid.appendChild(slot);
-  });
-  if(photos.length===0){
-    const empty=document.createElement('div');
-    empty.style.cssText='color:#334;font-size:12px;padding:20px;text-align:center;grid-column:1/-1';
-    empty.textContent='📷ボタンで宇宙の写真を撮影しましょう';
-    grid.appendChild(empty);
+  function makePhotoCard(ph, idx){
+    const card=document.createElement('div');card.className='photo-card';
+    const titleDiv=document.createElement('div');titleDiv.className='photo-card-title';
+    titleDiv.textContent=ph?ph.label:'No Photo';
+    card.appendChild(titleDiv);
+    const imgDiv=document.createElement('div');imgDiv.className='photo-card-img';
+    if(ph){
+      const c=document.createElement('canvas');
+      c.width=320;c.height=180;
+      c.getContext('2d').drawImage(ph.canvas,0,0,320,180);
+      imgDiv.appendChild(c);
+    } else {
+      imgDiv.style.cssText='display:flex;align-items:center;justify-content:center;aspect-ratio:16/9;color:#334;font-size:22px;opacity:.4';
+      imgDiv.textContent='📷';
+    }
+    card.appendChild(imgDiv);
+    const metaDiv=document.createElement('div');metaDiv.className='photo-card-meta';
+    if(ph){
+      const ts=ph.timestamp?new Date(ph.timestamp).toLocaleString('ja-JP',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+      metaDiv.textContent=`${ph.location||''} • ${ts}`;
+    } else {
+      metaDiv.textContent='撮影なし';
+    }
+    card.appendChild(metaDiv);
+    if(ph){
+      const dlBtn=document.createElement('button');dlBtn.className='photo-dl-btn';dlBtn.textContent='💾 保存';
+      dlBtn.addEventListener('click',()=>{
+        const dlC=document.createElement('canvas');dlC.width=ph.canvas.width;dlC.height=ph.canvas.height;
+        dlC.getContext('2d').drawImage(ph.canvas,0,0);
+        dlC.toBlob(blob=>{
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a');a.href=url;a.download='pale-blue-dot-photo.png';a.click();
+          setTimeout(()=>URL.revokeObjectURL(url),1000);
+        });
+      });
+      card.appendChild(dlBtn);
+    }
+    return card;
   }
+  // 9 fixed slots
+  for(let i=0;i<9;i++){
+    grid.appendChild(makePhotoCard(photos[i]||null, i));
+  }
+  // Additional photos beyond 9
+  for(let i=9;i<photos.length;i++){
+    grid.appendChild(makePhotoCard(photos[i], i));
+  }
+}
+
+function clearAllPhotos(){
+  return new Promise(resolve=>{
+    const req=indexedDB.deleteDatabase('PaleBlueDotPhotos');
+    req.onsuccess=()=>{photoDB=null;resolve();};
+    req.onerror=()=>resolve();
+    req.onblocked=()=>resolve();
+  });
 }
 
 // Load saved photos from IndexedDB on startup
 async function loadSavedPhotos(){
   try{
+    // Cache-clear sync: if no session token, clear IndexedDB
+    if(!localStorage.getItem('pbd_session')){
+      await clearAllPhotos();
+    }
+    localStorage.setItem('pbd_session','1');
     await openPhotoDB();
     const saved=await dbGetAllPhotos();
     saved.forEach(ph=>{
@@ -1619,7 +1744,7 @@ async function loadSavedPhotos(){
         const c=document.createElement('canvas');
         c.width=img.width;c.height=img.height;
         c.getContext('2d').drawImage(img,0,0);
-        photos.push({canvas:c,label:ph.label,location:ph.location,dist:ph.dist,slotId:ph.slotId});
+        photos.push({canvas:c,label:ph.label,location:ph.location,dist:ph.dist,slotId:ph.slotId,timestamp:ph.timestamp});
         document.getElementById('photo-count').textContent=`📸 ${photos.length}枚`;
         updateAlbum();
       };
@@ -1634,9 +1759,18 @@ async function loadSavedPhotos(){
 loadSavedPhotos();
 
 document.getElementById('album-btn').addEventListener('click',()=>{
-  document.getElementById('album').classList.toggle('show');
+  const album=document.getElementById('album');
+  if(!album.classList.contains('show')){
+    updateAlbum();
+    album.classList.add('show');
+  } else {
+    album.classList.remove('show');
+  }
 });
 document.getElementById('album-close').addEventListener('click',()=>{
+  document.getElementById('album').classList.remove('show');
+});
+document.getElementById('album-back-btn').addEventListener('click',()=>{
   document.getElementById('album').classList.remove('show');
 });
 
@@ -1782,32 +1916,34 @@ function updateCockpitHUD(){
 
 function enterSurfaceMode(pd){
   if(!visitedPlanets.includes(pd.id)) visitedPlanets.push(pd.id);
-  cockpitMode=true;
+  cockpitMode=false;
   currentSurfacePlanet=pd;
   const mesh=planetMeshes[pd.id];
   const planetPos=mesh.getWorldPosition(new THREE.Vector3());
-  const surfaceOffset=new THREE.Vector3(pd.r+pd.r*.01,0,0);
-  camera.position.copy(planetPos).add(surfaceOffset);
-  cockpitYaw=Math.PI;
-  cockpitPitch=0;
-  showCockpit(true);
-  showMsg(`${pd.nameJa}の地表\nドラッグで視点を動かせます`,3000,pd.colorHex);
-  const backBtn=document.createElement('button');
-  backBtn.className='hud-btn';backBtn.textContent='🚀 宇宙へ戻る';backBtn.id='back-surface';
-  backBtn.style.cssText='pointer-events:all;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);z-index:20;';
-  document.body.appendChild(backBtn);
-  backBtn.addEventListener('click',()=>{
-    document.body.removeChild(backBtn);
-    cockpitMode=false;
-    currentSurfacePlanet=null;
-    showCockpit(false);
-    camState='orbit';
-    orbitTarget.copy(planetPos);
-    spherical.r=pd.r*8;
-    updateCamera();
-    showMsg('宇宙へ帰還しました',2000);
-  });
+  // Hide cockpit frame — use surface canvas instead
+  showCockpit(false);
+  showSurfaceView(pd);
+  showMsg(`${pd.nameJa}の地表`,2000,pd.colorHex);
 }
+
+// Surface back button returns to orbit (wired via surface-back-btn)
+function leaveSurfaceMode(){
+  const pd=currentSurfacePlanet;
+  if(!pd)return;
+  const mesh=planetMeshes[pd.id];
+  const planetPos=mesh?mesh.getWorldPosition(new THREE.Vector3()):new THREE.Vector3();
+  hideSurfaceView();
+  cockpitMode=false;
+  currentSurfacePlanet=null;
+  showCockpit(false);
+  camState='orbit';
+  orbitTarget.copy(planetPos);
+  spherical.r=pd.r*8;
+  updateCamera();
+  showMsg('宇宙へ帰還しました',2000);
+}
+
+document.getElementById('surface-back-btn').addEventListener('click',leaveSurfaceMode);
 
 // ═══════════════════════════════════════════════════════════════════════
 // SPECIAL EVENTS (Heliopause, Alpha Centauri reached)
@@ -1956,12 +2092,14 @@ function startReentry(){
     altEl.style.opacity='1';
     fireEl.style.opacity='1';
     const s2Start=performance.now();
-    let shakeId=null;
 
     function s2frame(){
       const elapsed=(performance.now()-s2Start)/3000;
       const p=Math.min(1,elapsed);
       const intensity=Math.sin(p*Math.PI); // peaks at middle
+
+      // Set reentryShake for animate loop to apply
+      reentryShake=intensity*0.8;
 
       // Dynamic fire gradient
       const r1=Math.floor(255*intensity);
@@ -1970,7 +2108,7 @@ function startReentry(){
       const a2=(intensity*0.3).toFixed(2);
       fireEl.style.background=`radial-gradient(ellipse at 50% 60%,rgba(${r1},${g1},0,0) 20%,rgba(255,60,0,${a1}) 60%,rgba(255,200,0,${a2}) 100%)`;
 
-      // Camera shake
+      // Camera shake via cockpit yaw/pitch
       if(cockpitMode){
         cockpitYaw+=Math.sin(performance.now()*0.03)*0.002*intensity;
         cockpitPitch+=Math.cos(performance.now()*0.04)*0.001*intensity;
@@ -1992,6 +2130,7 @@ function startReentry(){
 
   // Stage 3: Peak heat + flash (2s)
   function stage3(){
+    reentryShake=0;
     playSfx('landing');
     showMsg('炎の中——地球へ',2000,'#ff6622');
     altEl.innerHTML='ALT 15km | VEL 0.8km/s | 減速中...';
@@ -2082,10 +2221,190 @@ document.getElementById('ending-restart').addEventListener('click',()=>{
 });
 
 // ═══════════════════════════════════════════════════════════════════════
+// SURFACE VIEW (2D Canvas rendering)
+// ═══════════════════════════════════════════════════════════════════════
+let saturnStormCalmed=false;
+let stormParticles=[];
+let stormAnimId=null;
+
+function drawSurfaceView(planetId){
+  const canvas=document.getElementById('surface-canvas');
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width=window.innerWidth;
+  const H=canvas.height=window.innerHeight;
+  const configs={
+    mercury:{skyTop:'#000005',skyHorizon:'#1a0e00',groundTop:'#4a4540',groundBottom:'#2a2520',stars:true,atmosphere:false,features:'craters'},
+    venus:{skyTop:'#3d1500',skyHorizon:'#8b4000',groundTop:'#5a3520',groundBottom:'#2a1a10',stars:false,atmosphere:true,features:'rocks'},
+    earth:{skyTop:'#0a3d8f',skyHorizon:'#87ceeb',groundTop:'#3d8f3d',groundBottom:'#2a5a2a',stars:false,atmosphere:true,features:'clouds'},
+    mars:{skyTop:'#7a2a1a',skyHorizon:'#c4733a',groundTop:'#8b3a1a',groundBottom:'#5a2510',stars:false,atmosphere:true,features:'rocks'},
+    jupiter:{skyTop:'#4a3010',skyHorizon:'#c48030',groundTop:'#8a5520',groundBottom:'#6a3a10',stars:false,atmosphere:true,features:'clouds_turbulent'},
+    saturn:{skyTop:'#2a1a00',skyHorizon:'#6b4a10',groundTop:'#5a3a10',groundBottom:'#3a2208',stars:false,atmosphere:true,features:'storm'},
+    uranus:{skyTop:'#0a3040',skyHorizon:'#4a9090',groundTop:'#2a5060',groundBottom:'#0a2030',stars:false,atmosphere:true,features:'haze'},
+    neptune:{skyTop:'#000a30',skyHorizon:'#0020a0',groundTop:'#000820',groundBottom:'#00041a',stars:true,atmosphere:true,features:'storm_blue'},
+    proxima_b:{skyTop:'#1a0500',skyHorizon:'#6a1a08',groundTop:'#3a1a0a',groundBottom:'#1a0a05',stars:false,atmosphere:true,features:'rocks'},
+  };
+  const cfg=configs[planetId]||configs.earth;
+  const skyGrad=ctx.createLinearGradient(0,0,0,H*0.65);
+  skyGrad.addColorStop(0,cfg.skyTop);skyGrad.addColorStop(1,cfg.skyHorizon);
+  ctx.fillStyle=skyGrad;ctx.fillRect(0,0,W,H);
+  if(cfg.stars){
+    for(let i=0;i<800;i++){
+      const sx=Math.random()*W,sy=Math.random()*H*0.6,sr=Math.random()*1.2+0.3;
+      ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);
+      ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.8+0.2})`;ctx.fill();
+    }
+  }
+  if(planetId==='mercury'){
+    const sunX=W*0.7,sunY=H*0.25,sunR=Math.min(W,H)*0.12;
+    const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,sunR*2);
+    sg.addColorStop(0,'#fffff8');sg.addColorStop(0.3,'#fff8e0');
+    sg.addColorStop(0.7,'rgba(255,220,100,0.3)');sg.addColorStop(1,'rgba(255,200,50,0)');
+    ctx.beginPath();ctx.arc(sunX,sunY,sunR*2,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
+    ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle='#fffff0';ctx.fill();
+  }
+  if(cfg.atmosphere){
+    const hazeGrad=ctx.createLinearGradient(0,H*0.45,0,H*0.65);
+    hazeGrad.addColorStop(0,'rgba(0,0,0,0)');hazeGrad.addColorStop(1,cfg.skyHorizon+'88');
+    ctx.fillStyle=hazeGrad;ctx.fillRect(0,H*0.45,W,H*0.2);
+  }
+  const groundY=H*0.62;
+  const groundGrad=ctx.createLinearGradient(0,groundY,0,H);
+  groundGrad.addColorStop(0,cfg.groundTop);groundGrad.addColorStop(1,cfg.groundBottom);
+  ctx.fillStyle=groundGrad;ctx.fillRect(0,groundY,W,H-groundY);
+  const horizonGrad=ctx.createLinearGradient(0,groundY-20,0,groundY+20);
+  horizonGrad.addColorStop(0,'rgba(0,0,0,0)');horizonGrad.addColorStop(0.5,cfg.skyHorizon+'66');horizonGrad.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=horizonGrad;ctx.fillRect(0,groundY-20,W,40);
+  if(cfg.features==='craters'){
+    for(let i=0;i<15;i++){
+      const cx=Math.random()*W,cy=groundY+Math.random()*(H-groundY)*0.6,cr=Math.random()*40+8;
+      ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);
+      ctx.strokeStyle='rgba(100,80,70,0.5)';ctx.lineWidth=1.5;ctx.stroke();
+      const cg=ctx.createRadialGradient(cx,cy,0,cx,cy,cr);
+      cg.addColorStop(0,'rgba(20,15,10,0.4)');cg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=cg;ctx.fill();
+    }
+  } else if(cfg.features==='rocks'||cfg.features==='storm'){
+    for(let i=0;i<20;i++){
+      const rx=Math.random()*W,ry=groundY+10+Math.random()*(H-groundY)*0.5;
+      const rw=Math.random()*60+10,rh=rw*(0.4+Math.random()*0.4);
+      ctx.beginPath();ctx.ellipse(rx,ry,rw,rh,Math.random()*0.4-0.2,0,Math.PI*2);
+      const rockColor=planetId==='mars'?'rgba(100,45,20,0.8)':'rgba(60,50,40,0.7)';
+      ctx.fillStyle=rockColor;ctx.fill();
+      ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=1;ctx.stroke();
+    }
+  } else if(cfg.features==='clouds'||cfg.features==='clouds_turbulent'||cfg.features==='haze'||cfg.features==='storm_blue'){
+    for(let i=0;i<6;i++){
+      const clx=Math.random()*W,cly=H*(0.3+Math.random()*0.2),clw=150+Math.random()*200;
+      const cloudAlpha=cfg.features==='clouds_turbulent'?0.25:0.3;
+      const cloudColor=cfg.features==='clouds_turbulent'?`rgba(220,160,60,${cloudAlpha})`:(cfg.features==='storm_blue'||cfg.features==='haze')?`rgba(80,160,220,${cloudAlpha})`:`rgba(255,255,255,${cloudAlpha})`;
+      const cg=ctx.createRadialGradient(clx,cly,0,clx,cly,clw*0.5);
+      cg.addColorStop(0,cloudColor);cg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.beginPath();ctx.ellipse(clx,cly,clw,clw*0.25,0,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
+    }
+  }
+  if(planetId==='saturn'&&saturnStormCalmed){
+    drawSaturnRingsInSky(ctx,W,H,groundY);
+  }
+  if(planetId==='venus'){
+    const fogGrad=ctx.createLinearGradient(0,H*0.3,0,H);
+    fogGrad.addColorStop(0,'rgba(180,80,20,0)');fogGrad.addColorStop(0.5,'rgba(180,80,20,0.2)');fogGrad.addColorStop(1,'rgba(120,50,10,0.4)');
+    ctx.fillStyle=fogGrad;ctx.fillRect(0,H*0.3,W,H);
+  }
+  if(planetId==='proxima_b'){
+    ctx.fillStyle='rgba(255,150,80,0.5)';ctx.font='11px Courier New';
+    ctx.fillText('※ 科学的仮説に基づく描画です',16,H-16);
+  }
+}
+
+function drawSaturnRingsInSky(ctx,W,H,groundY){
+  const cx=W*0.5,cy=groundY-30,rx=W*0.7,ry=H*0.08;
+  const rings=[
+    {r:1.0,color:'rgba(210,180,100,0.5)',width:12},
+    {r:0.88,color:'rgba(180,150,80,0.0)',width:6},
+    {r:0.78,color:'rgba(200,170,90,0.45)',width:20},
+    {r:0.6,color:'rgba(190,160,80,0.35)',width:30},
+  ];
+  rings.forEach(ring=>{
+    ctx.beginPath();ctx.ellipse(cx,cy,rx*ring.r,ry*ring.r,0,Math.PI,2*Math.PI);
+    ctx.strokeStyle=ring.color;ctx.lineWidth=ring.width;ctx.stroke();
+  });
+  const rg=ctx.createLinearGradient(0,cy-ry*2,0,cy+ry*2);
+  rg.addColorStop(0,'rgba(220,190,100,0)');rg.addColorStop(0.5,'rgba(220,190,100,0.08)');rg.addColorStop(1,'rgba(220,190,100,0)');
+  ctx.fillStyle=rg;ctx.fillRect(0,cy-ry*2,W,ry*4);
+}
+
+function startSaturnStorm(){
+  saturnStormCalmed=false;stormParticles=[];
+  for(let i=0;i<80;i++){
+    stormParticles.push({
+      x:Math.random()*window.innerWidth,
+      y:Math.random()*window.innerHeight*0.65,
+      vx:(Math.random()-0.5)*8+4,vy:(Math.random()-0.5)*2,
+      length:Math.random()*80+20,
+      alpha:Math.random()*0.4+0.1,
+      color:Math.random()<0.1?'#ffffaa':`rgba(${150+Math.floor(Math.random()*80)},${100+Math.floor(Math.random()*50)},${20+Math.floor(Math.random()*40)},`
+    });
+  }
+  animateStorm();
+}
+
+function animateStorm(){
+  if(saturnStormCalmed)return;
+  const canvas=document.getElementById('surface-canvas');
+  if(!canvas||canvas.style.display==='none')return;
+  drawSurfaceView('saturn');
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width,H=canvas.height;
+  stormParticles.forEach(p=>{
+    ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*3,p.y-p.vy*3);
+    const color=p.color.includes('rgba')?p.color+p.alpha+')':p.color;
+    ctx.strokeStyle=color;ctx.lineWidth=Math.random()*1.5+0.5;ctx.stroke();
+    p.x+=p.vx;p.y+=p.vy;
+    if(p.x>W)p.x=-p.length;if(p.x<-p.length)p.x=W;
+    if(p.y<0||p.y>H*0.65)p.vy*=-1;
+  });
+  if(Math.random()<0.02){
+    const lx=Math.random()*W,ly1=Math.random()*H*0.2,ly2=H*0.5+Math.random()*H*0.1;
+    ctx.beginPath();ctx.moveTo(lx,ly1);
+    for(let s=1;s<6;s++)ctx.lineTo(lx+(Math.random()-0.5)*40,ly1+(ly2-ly1)*s/5);
+    ctx.strokeStyle='rgba(255,255,180,0.8)';ctx.lineWidth=2;ctx.stroke();
+  }
+  stormAnimId=requestAnimationFrame(animateStorm);
+}
+
+function showSurfaceView(pd){
+  document.getElementById('surface-canvas').style.display='block';
+  document.getElementById('surface-ui').style.display='block';
+  document.getElementById('surface-info').textContent=pd.nameJa+' 地表';
+  drawSurfaceView(pd.id);
+  if(pd.id==='saturn'){
+    document.getElementById('saturn-storm-btn').style.display='block';
+    startSaturnStorm();
+  }
+}
+
+function hideSurfaceView(){
+  document.getElementById('surface-canvas').style.display='none';
+  document.getElementById('surface-ui').style.display='none';
+  document.getElementById('saturn-storm-btn').style.display='none';
+  if(stormAnimId){cancelAnimationFrame(stormAnimId);stormAnimId=null;}
+  saturnStormCalmed=false;
+}
+
+document.getElementById('saturn-storm-btn').addEventListener('click',()=>{
+  saturnStormCalmed=true;
+  if(stormAnimId){cancelAnimationFrame(stormAnimId);stormAnimId=null;}
+  drawSurfaceView('saturn');
+  document.getElementById('saturn-storm-btn').style.display='none';
+  playSfx('landing');
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // MAIN ANIMATION LOOP
 // ═══════════════════════════════════════════════════════════════════════
 const clock=new THREE.Clock();
 const rotSpeeds=[0,.004,-.002,.004,.004,.01,.009,.007,.007];
+let reentryShake=0; // set during reentry stage 2
 
 function animate(){
   requestAnimationFrame(animate);
@@ -2099,9 +2418,15 @@ function animate(){
     const orbitSpeed=pd.period>0?(2*Math.PI/(pd.period*.8)):0;
     orbitAngles[pd.id]+=(orbitSpeed*dt*s);
     const a=orbitAngles[pd.id];
-    m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
-    // self rotation
-    m.rotation.y+=rotSpeeds[i]*s*(pd.id==='venus'?-1:1);
+    if(!pd.isExoplanet){
+      m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
+    }
+    // self rotation using rotSpeed
+    if(pd.rotSpeed!==undefined){
+      m.rotation.y+=pd.rotSpeed*dt*s;
+    } else {
+      m.rotation.y+=rotSpeeds[i]*s*(pd.id==='venus'?-1:1);
+    }
     // clouds
     m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
   });
@@ -2111,6 +2436,14 @@ function animate(){
   // Cockpit camera
   if(cockpitMode){
     camera.rotation.set(cockpitPitch,cockpitYaw,0,'YXZ');
+  }
+
+  // Reentry camera shake
+  if(reentryShake>0){
+    camera.position.x+=(Math.random()-0.5)*reentryShake;
+    camera.position.y+=(Math.random()-0.5)*reentryShake*0.5;
+    reentryShake*=0.98; // decay
+    if(reentryShake<0.001)reentryShake=0;
   }
 
   // Check special events
