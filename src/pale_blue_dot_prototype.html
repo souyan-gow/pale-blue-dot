@@ -812,6 +812,21 @@ function playSfx(type){
 function updateAudio(){
   if(!audioCtx||!audioStarted)return;
   const t=audioCtx.currentTime;
+
+  // Suppress ambient when not in open space (R-41/42/47)
+  const albumOpen=document.getElementById('album')?.classList.contains('show');
+  const suppressAmbient=camState==='surface'||camState==='ending'||albumOpen;
+  audioNodes.droneGain.gain.linearRampToValueAtTime(suppressAmbient?0:0.35,t+0.5);
+  if(suppressAmbient){
+    audioNodes.proxGain.gain.linearRampToValueAtTime(0,t+0.3);
+    if(cockpitMode&&camState==='surface'){
+      audioNodes.noiseGain.gain.linearRampToValueAtTime(0.04,t+0.5);
+    }else{
+      audioNodes.noiseGain.gain.linearRampToValueAtTime(0,t+0.3);
+    }
+    return;
+  }
+
   const cp=camera.position;
   const dist=cp.length();
   const au=dist/EARTH_ORBIT;
@@ -865,7 +880,7 @@ let audioMuted=false;
 document.getElementById('mute-btn').addEventListener('click',()=>{
   audioMuted=!audioMuted;
   document.getElementById('mute-btn').textContent=audioMuted?'🔇':'🔊';
-  if(audioNodes.master) audioNodes.master.gain.linearRampToValueAtTime(audioMuted?0:0.25,audioCtx.currentTime+0.1);
+  if(audioNodes.master) audioNodes.master.gain.linearRampToValueAtTime(audioMuted?0:0.5,audioCtx.currentTime+0.1);
 });
 
 // Keyboard shortcuts
@@ -1291,7 +1306,8 @@ function showInfoPanel(planetId){
   dot.style.boxShadow=`0 0 18px 4px ${pd.colorHex}44`;
   // Create canvas icon with planet texture
   const ic=document.createElement('canvas');
-  ic.width=48;ic.height=48;
+  ic.width=128;ic.height=128;
+  ic.style.width='100%';ic.style.height='100%';
   dot.appendChild(ic);
   const ictx=ic.getContext('2d');
   // Cancel previous animation
@@ -1300,21 +1316,37 @@ function showInfoPanel(planetId){
   const texKey=pd.id;
   const srcTex=TEXTURES[texKey];
   function drawIconFrame(){
-    ictx.clearRect(0,0,48,48);
+    ictx.clearRect(0,0,128,128);
     ictx.save();
-    ictx.beginPath();ictx.arc(24,24,22,0,Math.PI*2);ictx.clip();
+    ictx.beginPath();ictx.arc(64,64,58,0,Math.PI*2);ictx.clip();
     if(srcTex&&srcTex.image){
       const img=srcTex.image;
       const iw=img.width||256,ih=img.height||256;
       const offsetX=((iconAngle/(Math.PI*2))*iw)%iw;
-      ictx.drawImage(img,offsetX,0,iw-offsetX,ih,-22,0,44*(iw-offsetX)/iw,44);
-      if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,-22+44*(iw-offsetX)/iw,0,44*offsetX/iw,44);
+      // brightness filter removes baked-in shadow from texture
+      ictx.filter='brightness(1.6)';
+      ictx.drawImage(img,offsetX,0,iw-offsetX,ih,-58,0,116*(iw-offsetX)/iw,116);
+      if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,-58+116*(iw-offsetX)/iw,0,116*offsetX/iw,116);
+      ictx.filter='none';
     } else {
-      const g=ictx.createRadialGradient(18,14,2,24,24,22);
-      g.addColorStop(0,'#fff');g.addColorStop(0.4,pd.colorHex);g.addColorStop(1,'#000');
-      ictx.fillStyle=g;ictx.fillRect(2,2,44,44);
+      const g=ictx.createRadialGradient(48,38,5,64,64,58);
+      g.addColorStop(0,'#fff');g.addColorStop(0.5,pd.colorHex);g.addColorStop(1,pd.colorHex);
+      ictx.fillStyle=g;ictx.fillRect(5,5,116,116);
     }
     ictx.restore();
+    // Saturn ring drawn outside clip so it extends beyond sphere
+    if(pd.id==='saturn'){
+      ictx.save();
+      ictx.translate(64,64);ictx.scale(1,0.28);
+      const rg=ictx.createRadialGradient(0,0,60,0,0,86);
+      rg.addColorStop(0,'rgba(200,180,140,0)');
+      rg.addColorStop(0.15,'rgba(210,190,150,0.7)');
+      rg.addColorStop(0.7,'rgba(180,160,120,0.55)');
+      rg.addColorStop(1,'rgba(180,160,120,0)');
+      ictx.beginPath();ictx.arc(0,0,86,0,Math.PI*2);
+      ictx.fillStyle=rg;ictx.fill();
+      ictx.restore();
+    }
     iconAngle+=0.015;
     if(document.getElementById('info-panel').classList.contains('show')){
       infoDotAnimId=requestAnimationFrame(drawIconFrame);
@@ -1752,6 +1784,11 @@ function clearAllPhotos(){
 // Load saved photos from IndexedDB on startup
 async function loadSavedPhotos(){
   try{
+    // Hard-reload detection: transferSize>0 means browser bypassed HTTP cache (Ctrl+Shift+R)
+    const _nav=performance.getEntriesByType('navigation')[0];
+    if(_nav&&_nav.type==='reload'&&_nav.transferSize>0){
+      localStorage.removeItem('pbd_session');
+    }
     // Cache-clear sync: if no session token, clear IndexedDB
     if(!localStorage.getItem('pbd_session')){
       await clearAllPhotos();
@@ -1782,21 +1819,23 @@ async function loadSavedPhotos(){
 }
 loadSavedPhotos();
 
+function openAlbum(){
+  updateAlbum();
+  document.getElementById('album').classList.add('show');
+  // Hide info panel while album is open (R-43)
+  document.getElementById('info-panel').classList.remove('show');
+}
+function closeAlbum(){
+  document.getElementById('album').classList.remove('show');
+  // Restore info panel if a planet was selected (R-43)
+  if(currentPlanetInfo) document.getElementById('info-panel').classList.add('show');
+}
 document.getElementById('album-btn').addEventListener('click',()=>{
   const album=document.getElementById('album');
-  if(!album.classList.contains('show')){
-    updateAlbum();
-    album.classList.add('show');
-  } else {
-    album.classList.remove('show');
-  }
+  if(!album.classList.contains('show')) openAlbum(); else closeAlbum();
 });
-document.getElementById('album-close').addEventListener('click',()=>{
-  document.getElementById('album').classList.remove('show');
-});
-document.getElementById('album-back-btn').addEventListener('click',()=>{
-  document.getElementById('album').classList.remove('show');
-});
+document.getElementById('album-close').addEventListener('click',closeAlbum);
+document.getElementById('album-back-btn').addEventListener('click',closeAlbum);
 
 // ═══════════════════════════════════════════════════════════════════════
 // MSG OVERLAY
@@ -2092,66 +2131,63 @@ function startReentry(){
   altEl.style.cssText='position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:56;pointer-events:none;font-size:14px;color:#ff8844;letter-spacing:.15em;text-align:center;opacity:0;transition:opacity .5s';
   document.body.appendChild(altEl);
 
-  // Stage 1: Approach (2.5s) — zoom toward earth with speed lines
+  // Unified approach (7s): Earth continuously zooms in while vibration gradually builds
   showMsg('大気圏突入シーケンス開始\n高度 400km  速度 7.8 km/s',2500,'#4fc3f7');
-  let t=0;
   const startR=spherical.r;
-  const s1Start=performance.now();
+  const targetR=PLANET_MAP['earth'].r*2;
+  const APPROACH_MS=7000;
+  const approachStart=performance.now();
+  let phase2Shown=false;
 
-  function stage1(){
-    const elapsed=(performance.now()-s1Start)/2500;
-    t=Math.min(1,elapsed);
-    const e=t*t;
-    spherical.r=lerp(startR,PLANET_MAP['earth'].r*2,e);
+  function approachFrame(){
+    const t=Math.min(1,(performance.now()-approachStart)/APPROACH_MS);
+
+    // Continuous linear zoom toward Earth
+    spherical.r=lerp(startR,targetR,t);
     updateCamera();
-    // Speed lines during approach
-    slCanvas.style.opacity=(t*0.6).toString();
-    drawSpeedLines(t*0.5,t*0.4);
-    if(t<1) requestAnimationFrame(stage1); else stage2();
-  }
-  setTimeout(()=>requestAnimationFrame(stage1),2800);
 
-  // Stage 2: Plasma heating (3s) — fire overlay builds, camera shakes
-  function stage2(){
-    showMsg('高度 80km — プラズマ加熱開始\n通信途絶（ブラックアウト）',2500,'#ff8844');
-    altEl.style.opacity='1';
-    fireEl.style.opacity='1';
-    const s2Start=performance.now();
+    // Speed lines ramp up steadily
+    slCanvas.style.opacity=Math.min(0.8,t*1.5).toString();
+    drawSpeedLines(t*0.6,t*0.4);
 
-    function s2frame(){
-      const elapsed=(performance.now()-s2Start)/3000;
-      const p=Math.min(1,elapsed);
-      const intensity=Math.sin(p*Math.PI); // peaks at middle
+    // Vibration: quadratic rise starting at t=0.3, max 0.8 at t=1
+    const shakeFactor=Math.max(0,(t-0.3)/0.7);
+    reentryShake=Math.pow(shakeFactor,2)*0.8;
 
-      // Set reentryShake for animate loop to apply
-      reentryShake=intensity*3;
-
-      // Dynamic fire gradient
-      const r1=Math.floor(255*intensity);
-      const g1=Math.floor(120*intensity);
-      const a1=(intensity*0.6).toFixed(2);
-      const a2=(intensity*0.3).toFixed(2);
-      fireEl.style.background=`radial-gradient(ellipse at 50% 60%,rgba(${r1},${g1},0,0) 20%,rgba(255,60,0,${a1}) 60%,rgba(255,200,0,${a2}) 100%)`;
-
-      // Camera shake via cockpit yaw/pitch
-      if(cockpitMode){
-        cockpitYaw+=Math.sin(performance.now()*0.03)*0.002*intensity;
-        cockpitPitch+=Math.cos(performance.now()*0.04)*0.001*intensity;
-      }
-
-      // Altitude readout
-      const alt=Math.floor(lerp(80,25,p));
-      const vel=(lerp(7.8,2.5,p)).toFixed(1);
-      const temp=Math.floor(lerp(1500,3000,intensity));
-      altEl.innerHTML=`ALT ${alt}km | VEL ${vel}km/s | ${temp}°C`;
-
-      // Speed lines
-      drawSpeedLines(0.3+intensity*0.7, intensity*0.5);
-
-      if(p<1) requestAnimationFrame(s2frame); else stage3();
+    // Cockpit micro-vibration (yaw/pitch nudge, same curve)
+    if(cockpitMode&&shakeFactor>0){
+      const vib=Math.pow(shakeFactor,2)*0.003;
+      cockpitYaw+=Math.sin(performance.now()*0.031)*vib;
+      cockpitPitch+=Math.cos(performance.now()*0.043)*vib*0.6;
     }
-    requestAnimationFrame(s2frame);
+
+    // Plasma fire: fades in from t=0.5
+    if(t>0.5){
+      const fp=(t-0.5)/0.5;
+      const r1=Math.floor(255*fp),g1=Math.floor(100*fp);
+      const a1=(fp*0.55).toFixed(2),a2=(fp*0.25).toFixed(2);
+      fireEl.style.opacity='1';
+      fireEl.style.background=`radial-gradient(ellipse at 50% 60%,rgba(${r1},${g1},0,0) 20%,rgba(255,60,0,${a1}) 60%,rgba(255,200,0,${a2}) 100%)`;
+    }
+
+    // Altitude readout: appears at t=0.4, tracks full descent
+    if(t>0.4){
+      altEl.style.opacity='1';
+      const alt=Math.floor(lerp(400,80,t));
+      const vel=lerp(7.8,2.5,t).toFixed(1);
+      const tempStr=t>0.6?` | ${Math.floor(lerp(1500,3000,(t-0.6)/0.4))}°C`:'';
+      altEl.innerHTML=`ALT ${alt}km | VEL ${vel}km/s${tempStr}`;
+    }
+
+    // Phase 2 message fires once at t≈0.45
+    if(!phase2Shown&&t>=0.45){
+      phase2Shown=true;
+      showMsg('高度 80km — プラズマ加熱開始\n通信途絶（ブラックアウト）',2500,'#ff8844');
+    }
+
+    if(t<1) requestAnimationFrame(approachFrame); else stage3();
   }
+  setTimeout(()=>requestAnimationFrame(approachFrame),2800);
 
   // Stage 3: Peak heat + flash (2s)
   function stage3(){
@@ -2418,6 +2454,21 @@ function hideSurfaceView(){
   saturnStormCalmed=false;
 }
 
+// Surface drag: rotate cockpit view while in surface mode
+{
+  let surfDrag=false,surfLast={x:0,y:0};
+  const sc=document.getElementById('surface-canvas');
+  sc.addEventListener('mousedown',e=>{surfDrag=true;surfLast={x:e.clientX,y:e.clientY};});
+  sc.addEventListener('mousemove',e=>{
+    if(!surfDrag)return;
+    cockpitYaw+=(e.clientX-surfLast.x)*0.004;
+    cockpitPitch=Math.max(-1.1,Math.min(1.1,cockpitPitch-(e.clientY-surfLast.y)*0.004));
+    surfLast={x:e.clientX,y:e.clientY};
+  });
+  sc.addEventListener('mouseup',()=>{surfDrag=false;});
+  sc.addEventListener('mouseleave',()=>{surfDrag=false;});
+}
+
 document.getElementById('saturn-storm-btn').addEventListener('click',()=>{
   saturnStormCalmed=true;
   if(stormAnimId){cancelAnimationFrame(stormAnimId);stormAnimId=null;}
@@ -2448,11 +2499,11 @@ function animate(){
     if(!pd.isExoplanet){
       m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
     }
-    // self rotation using rotSpeed (independent of simSpeed)
+    // self rotation: Math.max(1,s) ensures rotation continues even when paused
     if(pd.rotSpeed!==undefined){
-      m.rotation.y+=pd.rotSpeed*dt;
+      m.rotation.y+=pd.rotSpeed*dt*Math.max(1,s);
     } else {
-      m.rotation.y+=rotSpeeds[i]*(pd.id==='venus'?-1:1);
+      m.rotation.y+=rotSpeeds[i]*Math.max(1,s)*(pd.id==='venus'?-1:1);
     }
     // clouds
     m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
