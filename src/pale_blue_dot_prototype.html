@@ -15,7 +15,7 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:#000;overflow:hidden;width:100vw;height:100vh;font-family:'Courier New',monospace;color:#e0eaff;user-select:none}
-canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
+#c{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 
 /* ── HUD ── */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:10}
@@ -44,7 +44,7 @@ canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
 #dest-title{font-size:10px;color:#446;letter-spacing:.12em;margin-bottom:4px;padding-left:4px}
 
 /* ── INFO PANEL ── */
-#info-panel{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:15;width:260px;background:rgba(3,8,22,.92);border:1px solid rgba(79,195,247,.2);border-radius:14px;padding:20px 18px;display:none;backdrop-filter:blur(12px)}
+#info-panel{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:50;width:260px;background:rgba(3,8,22,.92);border:1px solid rgba(79,195,247,.2);border-radius:14px;padding:20px 18px;display:none;backdrop-filter:blur(12px)}
 #info-panel.show{display:block}
 #info-close{position:absolute;top:10px;right:12px;background:none;border:none;color:#446;font-size:16px;cursor:pointer;pointer-events:all}
 #info-close:hover{color:#fff}
@@ -197,7 +197,7 @@ html,body{overscroll-behavior:none;touch-action:none}
       <button class="hud-btn" id="nav-btn">🗺 目的地</button>
       <button class="hud-btn" id="photo-btn">📷 撮影</button>
       <button class="hud-btn" id="album-btn">🖼 アルバム</button>
-      <button class="hud-btn" id="unit-btn" title="距離単位を切替">AU</button>
+      <button class="hud-btn" id="unit-btn" title="距離単位を切替">km</button>
       <button class="hud-btn" id="mute-btn" title="音声ON/OFF">🔊</button>
       <span id="photo-count">📸 0枚</span>
     </div>
@@ -241,8 +241,8 @@ html,body{overscroll-behavior:none;touch-action:none}
 </div>
 
 <!-- Surface view canvas -->
-<canvas id="surface-canvas" style="position:fixed;inset:0;z-index:15;display:none;width:100%;height:100%"></canvas>
-<div id="surface-ui" style="position:fixed;inset:0;z-index:16;display:none;pointer-events:none;">
+<canvas id="surface-canvas" style="position:fixed;inset:0;z-index:55;display:none;width:100%;height:100%"></canvas>
+<div id="surface-ui" style="position:fixed;inset:0;z-index:56;display:none;pointer-events:none;">
   <button id="surface-back-btn" style="pointer-events:all;position:absolute;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 28px;border:1px solid rgba(79,195,247,.5);border-radius:24px;background:rgba(0,8,20,.7);color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em;">🚀 宇宙へ戻る</button>
   <div id="surface-info" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:12px;color:#8ab;letter-spacing:.1em;"></div>
   <button id="saturn-storm-btn" style="display:none;pointer-events:all;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);padding:12px 28px;border:1px solid rgba(255,200,80,.5);border-radius:24px;background:rgba(20,10,0,.8);color:#ffc850;font-size:14px;cursor:pointer;letter-spacing:.1em;">⚡ 嵐を収める</button>
@@ -627,12 +627,33 @@ function texSun(){
 function texStarfield(){
   const c=mkCanvas(2048,1024),g=c.getContext('2d');
   g.fillStyle='#000008';g.fillRect(0,0,2048,1024);
-  for(let i=0;i<4000;i++){
-    const x=Math.random()*2048,y=Math.random()*1024,r=Math.random()*1.5+.2,a=Math.random()*.8+.2;
-    const hue=Math.random()<.15?`hsl(${Math.random()*60+200},60%,${80+Math.random()*20}%)`:`rgba(255,255,255,${a})`;
-    g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fillStyle=hue;g.fill();
+  // Star color palette: white, blue-white, yellow, orange, red-orange
+  const starColors=['rgba(255,255,255,A)','rgba(200,220,255,A)','rgba(255,240,180,A)','rgba(255,200,120,A)','rgba(255,160,100,A)','rgba(180,200,255,A)'];
+  for(let i=0;i<6000;i++){
+    const x=Math.random()*2048,y=Math.random()*1024;
+    const brightness=Math.random();
+    // Most stars tiny (0.2-0.8), some medium (0.8-1.5), few large (1.5-2.5)
+    const r=brightness<0.7?Math.random()*0.6+0.2:brightness<0.95?Math.random()*0.7+0.8:Math.random()*1.0+1.5;
+    const a=(Math.random()*0.6+0.4).toFixed(2);
+    const col=starColors[Math.floor(Math.random()*starColors.length)].replace('A',a);
+    g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fillStyle=col;g.fill();
   }
-  [{x:.2,y:.3,c:'rgba(80,40,120,.04)'},{x:.7,y:.6,c:'rgba(40,80,120,.03)'},{x:.5,y:.2,c:'rgba(60,30,90,.035)'}].forEach(n=>{
+  // Bright stars with diffraction spikes
+  for(let i=0;i<30;i++){
+    const x=Math.random()*2048,y=Math.random()*1024;
+    const r=Math.random()*1.2+1.8;
+    const a=(Math.random()*0.4+0.7).toFixed(2);
+    const col=starColors[Math.floor(Math.random()*starColors.length)].replace('A',a);
+    g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fillStyle=col;g.fill();
+    // Cross diffraction spike
+    const spikeLen=r*6+Math.random()*8;
+    g.save();g.globalAlpha=parseFloat(a)*0.5;g.strokeStyle=col.replace(/[\d.]+\)$/,'0.9)');g.lineWidth=0.5;
+    g.beginPath();g.moveTo(x-spikeLen,y);g.lineTo(x+spikeLen,y);g.stroke();
+    g.beginPath();g.moveTo(x,y-spikeLen);g.lineTo(x,y+spikeLen);g.stroke();
+    g.restore();
+  }
+  // Nebula glow patches
+  [{x:.2,y:.3,c:'rgba(80,40,120,.05)'},{x:.7,y:.6,c:'rgba(40,80,120,.04)'},{x:.5,y:.2,c:'rgba(60,30,90,.045)'},{x:.85,y:.4,c:'rgba(30,60,80,.035)'}].forEach(n=>{
     const ng=g.createRadialGradient(n.x*2048,n.y*1024,0,n.x*2048,n.y*1024,300);ng.addColorStop(0,n.c);ng.addColorStop(1,'rgba(0,0,0,0)');
     g.beginPath();g.arc(n.x*2048,n.y*1024,300,0,Math.PI*2);g.fillStyle=ng;g.fill();
   });
@@ -688,7 +709,7 @@ function initAudio(){
 
     // Master gain
     const master=audioCtx.createGain();
-    master.gain.value=0.25;
+    master.gain.value=0.5;
     master.connect(audioCtx.destination);
     audioNodes.master=master;
 
@@ -700,7 +721,7 @@ function initAudio(){
     const droneC=audioCtx.createOscillator();
     droneC.type='sine';droneC.frequency.value=82.5;
     const droneGain=audioCtx.createGain();
-    droneGain.gain.value=0.12;
+    droneGain.gain.value=0.35;
     const droneFilter=audioCtx.createBiquadFilter();
     droneFilter.type='lowpass';droneFilter.frequency.value=200;droneFilter.Q.value=2;
     droneA.connect(droneFilter);droneB.connect(droneFilter);droneC.connect(droneFilter);
@@ -809,7 +830,7 @@ function updateAudio(){
   });
   if(nearPd&&minD<nearPd.r*10){
     const prox=1-clamp(minD/(nearPd.r*10),0,1);
-    audioNodes.proxGain.gain.linearRampToValueAtTime(prox*0.18,t+0.1);
+    audioNodes.proxGain.gain.linearRampToValueAtTime(prox*0.45,t+0.1);
     // Map planet color to frequency
     const freqMap={sun:220,mercury:330,venus:293,earth:261,mars:311,jupiter:174,saturn:196,uranus:349,neptune:392,proxima_b:440};
     const freq=freqMap[nearPd.id]||280;
@@ -880,7 +901,7 @@ const orbitAngles = {};
 const selfRot = {};
 
 function buildPlanetMesh(pd){
-  if(pd.r===0||pd.isBoundary||pd.isStar) return;
+  if(pd.r===0||pd.isBoundary||pd.isStar||pd.isExoplanet) return;
   const tex = TEXTURES[pd.id] || null;
   const mat = new THREE.MeshStandardMaterial({
     map: tex, roughness:.85, metalness:.0
@@ -1172,7 +1193,7 @@ canvas.addEventListener('wheel',e=>{
   if(cockpitMode)return;
   if(e.ctrlKey){
     e.preventDefault();
-    const delta=e.deltaY>0?1:-1;
+    const delta=e.deltaY>0?-1:1;
     const moveSpeed=spherical.r*0.08*delta;
     const mouseVec=new THREE.Vector2(
       (e.clientX/window.innerWidth)*2-1,
@@ -1299,13 +1320,13 @@ function showInfoPanel(planetId){
       infoDotAnimId=requestAnimationFrame(drawIconFrame);
     }
   }
-  drawIconFrame();
   document.getElementById('info-name-en').textContent=pd.nameEn;
   document.getElementById('info-name-ja').textContent=pd.nameJa;
   document.getElementById('info-facts').innerHTML=
     pd.facts.map(([k,v])=>`<div class="info-fact"><span class="info-fk">${k}</span><span class="info-fv">${v}</span></div>`).join('');
   document.getElementById('travel-btn').style.display=pd.noTravel?'none':'block';
   panel.classList.add('show');
+  drawIconFrame();
 }
 document.getElementById('info-close').addEventListener('click',()=>{
   document.getElementById('info-panel').classList.remove('show');currentPlanetInfo=null;
@@ -1391,7 +1412,7 @@ document.getElementById('speed-range').addEventListener('input',e=>{
 // ═══════════════════════════════════════════════════════════════════════
 // SCALE UNIT SYSTEM (AU ↔ km ↔ 光年)
 // ═══════════════════════════════════════════════════════════════════════
-const UNIT_MODES=['AU','km','光年'];
+const UNIT_MODES=['km','光年'];
 let unitModeIdx=0;
 const AU_KM=149597870.7; // 1 AU in km
 const LY_AU=63241.077;   // 1 light-year in AU
@@ -1717,6 +1738,9 @@ function updateAlbum(){
 }
 
 function clearAllPhotos(){
+  photos.length=0;
+  Object.keys(collectionMap).forEach(k=>delete collectionMap[k]);
+  document.getElementById('photo-count').textContent='📸 0枚';
   return new Promise(resolve=>{
     const req=indexedDB.deleteDatabase('PaleBlueDotPhotos');
     req.onsuccess=()=>{photoDB=null;resolve();};
@@ -1980,7 +2004,7 @@ function triggerAlphaCentauri(){
       <div style="font-size:13px;color:#8ab;letter-spacing:.08em;margin-bottom:40px;line-height:1.8">振り返ると——太陽系が Pale Yellow Dot として輝いている<br>ここからあなたはどうしますか？</div>
       <div style="display:flex;gap:20px">
         <button id="choice-return" style="padding:12px 28px;border:1px solid rgba(79,195,247,.6);border-radius:24px;background:rgba(79,195,247,.15);color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em">🏠 地球へ帰還する</button>
-        <button id="choice-ahead" style="padding:12px 28px;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(255,255,255,.05);color:#8ab;font-size:13px;cursor:pointer;letter-spacing:.1em">▶ 先へ進む</button>
+        <button id="choice-ahead" style="padding:12px 28px;border:1px solid rgba(255,255,255,.2);border-radius:24px;background:rgba(255,255,255,.05);color:#8ab;font-size:13px;cursor:pointer;letter-spacing:.1em">▶ プロキシマbへ進む</button>
       </div>
     `;
     document.body.appendChild(choice);
@@ -1989,7 +2013,7 @@ function triggerAlphaCentauri(){
     });
     document.getElementById('choice-ahead').addEventListener('click',()=>{
       document.body.removeChild(choice);
-      showMsg('さらに先の宇宙へ……\nでも、帰る場所は一つしかない',4000,'#8ab');
+      startLanding('proxima_b');
     });
   },6000);
 }
@@ -2001,6 +2025,7 @@ function startReturnJourney(){
   camState='returning';
   cockpitMode=false;
   showCockpit(true); // keep cockpit for cinematic return
+  simSpeed=0; // freeze orbital motion during return montage
   showMsg('地球へ——帰還の旅が始まる',3000,'#4fc3f7');
 
   // Build montage from visited planets (reverse order), always end at earth
@@ -2099,7 +2124,7 @@ function startReentry(){
       const intensity=Math.sin(p*Math.PI); // peaks at middle
 
       // Set reentryShake for animate loop to apply
-      reentryShake=intensity*0.8;
+      reentryShake=intensity*3;
 
       // Dynamic fire gradient
       const r1=Math.floor(255*intensity);
@@ -2216,7 +2241,9 @@ function triggerEnding(){
   },2000);
 }
 
-document.getElementById('ending-restart').addEventListener('click',()=>{
+document.getElementById('ending-restart').addEventListener('click',async ()=>{
+  localStorage.removeItem('pbd_session');
+  await clearAllPhotos();
   location.reload();
 });
 
@@ -2421,11 +2448,11 @@ function animate(){
     if(!pd.isExoplanet){
       m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
     }
-    // self rotation using rotSpeed
+    // self rotation using rotSpeed (independent of simSpeed)
     if(pd.rotSpeed!==undefined){
-      m.rotation.y+=pd.rotSpeed*dt*s;
+      m.rotation.y+=pd.rotSpeed*dt;
     } else {
-      m.rotation.y+=rotSpeeds[i]*s*(pd.id==='venus'?-1:1);
+      m.rotation.y+=rotSpeeds[i]*(pd.id==='venus'?-1:1);
     }
     // clouds
     m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
