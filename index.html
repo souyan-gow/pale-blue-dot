@@ -294,6 +294,8 @@ const PLANETS = [
     facts:[['直径','12,104 km'],['公転周期','224.7日'],['衛星数','0'],['平均温度','464°C']] },
   { id:'earth',   nameJa:'地球',    nameEn:'EARTH',    color:0x2a6fd4, colorHex:'#2a6fd4', r:1.000, orbitR:409.3,  period:10,   tilt:23.4,  rotSpeed:0.005,
     facts:[['直径','12,742 km'],['公転周期','365.25日'],['衛星数','1'],['平均温度','15°C']] },
+  { id:'moon',    nameJa:'月',      nameEn:'MOON',     color:0xa8a8a8, colorHex:'#a8a8a8', r:0.273, orbitR:60.3,   period:0.75, tilt:1.5,   rotSpeed:0.0,    isMoon:true, parentId:'earth',
+    facts:[['直径','3,474 km'],['地球からの距離','384,400 km'],['公転周期','27.32日'],['自転','公転と同期（潮汐固定）'],['表面温度','-173°C〜127°C']] },
   { id:'mars',    nameJa:'火星',    nameEn:'MARS',     color:0xb5391a, colorHex:'#b5391a', r:0.532, orbitR:623.8,  period:18.8, tilt:25.2,  rotSpeed:0.0048,
     facts:[['直径','6,779 km'],['公転周期','686.97日'],['衛星数','2'],['平均温度','-65°C']] },
   { id:'jupiter', nameJa:'木星',    nameEn:'JUPITER',  color:0xc4935a, colorHex:'#c4935a', r:10.973,orbitR:2129.6, period:118,  tilt:3.1,   rotSpeed:0.012,
@@ -566,6 +568,46 @@ function texSaturnRing(){
   g.putImageData(id,0,0);return new THREE.CanvasTexture(c);
 }
 
+function texMoon(){
+  const S=512;const c=mkCanvas(S,S),g=c.getContext('2d');
+  const id=g.createImageData(S,S),d=id.data;
+  for(let y=0;y<S;y++)for(let x=0;x<S;x++){
+    const nx=x/S*5,ny=y/S*5;
+    // Highlands (bright) vs mare (dark basalt)
+    const base=fbm(nx,ny,6,701),mare=fbm(nx*.4+1.3,ny*.4,4,812);
+    const isMare=mare>0.60;
+    const micro=fbm(nx*4,ny*4,3,203)*.08;
+    let br=isMare?lerp(0.12,0.28,base)+micro:lerp(0.42,0.80,base)+micro;
+    const i=(y*S+x)*4;
+    d[i]=clamp(br*205|0,0,255);d[i+1]=clamp(br*200|0,0,255);d[i+2]=clamp(br*192|0,0,255);d[i+3]=255;
+  }
+  g.putImageData(id,0,0);
+  // Craters
+  const craters=[
+    [.14,.72,.055,.85],[.70,.55,.075,.80],[.44,.18,.060,.78],
+    [.28,.65,.038,.82],[.82,.30,.032,.85],[.55,.78,.042,.75],
+    [.10,.45,.024,.88],[.65,.35,.022,.85],[.75,.70,.020,.90],
+    [.35,.30,.018,.85],[.88,.58,.026,.82],[.20,.20,.030,.80],
+    [.50,.50,.015,.90],[.62,.15,.016,.88],[.92,.42,.022,.83],
+  ];
+  for(const [cx,cy,r,dep] of craters){
+    const px=cx*S,py=cy*S,pr=r*S;
+    const fl=g.createRadialGradient(px,py,0,px,py,pr*.8);
+    fl.addColorStop(0,`rgba(30,28,25,${dep*.7})`);fl.addColorStop(1,'rgba(0,0,0,0)');
+    g.beginPath();g.arc(px,py,pr*.8,0,Math.PI*2);g.fillStyle=fl;g.fill();
+    const rim=g.createRadialGradient(px,py,pr*.75,px,py,pr*1.3);
+    rim.addColorStop(0,'rgba(0,0,0,0)');rim.addColorStop(.5,`rgba(220,215,210,${dep*.4})`);rim.addColorStop(1,'rgba(0,0,0,0)');
+    g.beginPath();g.arc(px,py,pr*1.3,0,Math.PI*2);g.fillStyle=rim;g.fill();
+    if(r>.04){
+      g.save();g.globalAlpha=dep*.12;g.strokeStyle='rgba(230,225,218,1)';g.lineWidth=pr*.12;
+      for(let k=0;k<8;k++){const ra=k/8*Math.PI*2+(cx*7+cy*13);const rlen=pr*(3+k*.5);
+        g.beginPath();g.moveTo(px,py);g.lineTo(px+Math.cos(ra)*rlen,py+Math.sin(ra)*rlen);g.stroke();}
+      g.restore();
+    }
+  }
+  return new THREE.CanvasTexture(c);
+}
+
 function texUranus(){
   const S=512;const c=mkCanvas(S,S),g=c.getContext('2d');
   const id=g.createImageData(S,S),d=id.data;
@@ -678,6 +720,7 @@ async function loadAllTextures(){
     ['jupiter','木星',texJupiter],
     ['saturn','土星',texSaturn],
     ['saturn_ring','土星リング',texSaturnRing],
+    ['moon','月',texMoon],
     ['uranus','天王星',texUranus],
     ['neptune','海王星',texNeptune],
   ];
@@ -847,7 +890,7 @@ function updateAudio(){
     const prox=1-clamp(minD/(nearPd.r*10),0,1);
     audioNodes.proxGain.gain.linearRampToValueAtTime(prox*0.45,t+0.1);
     // Map planet color to frequency
-    const freqMap={sun:220,mercury:330,venus:293,earth:261,mars:311,jupiter:174,saturn:196,uranus:349,neptune:392,proxima_b:440};
+    const freqMap={sun:220,mercury:330,venus:293,earth:261,moon:246,mars:311,jupiter:174,saturn:196,uranus:349,neptune:392,proxima_b:440};
     const freq=freqMap[nearPd.id]||280;
     audioNodes.proxOsc.frequency.linearRampToValueAtTime(freq,t+0.1);
     audioNodes.proxFilter.frequency.linearRampToValueAtTime(freq*2,t+0.1);
@@ -1009,8 +1052,8 @@ function buildPlanetMesh(pd){
       new THREE.MeshStandardMaterial({color:0x3060ff,transparent:true,opacity:.12,depthWrite:false,blending:THREE.AdditiveBlending})));
   }
 
-  // Orbit line
-  if(pd.orbitR>0){
+  // Orbit line (skip moon — its orbit ring is added to Earth mesh separately)
+  if(pd.orbitR>0&&!pd.isMoon){
     const pts=[];
     for(let j=0;j<=128;j++){const a=j/128*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR));}
     scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),
@@ -1033,6 +1076,12 @@ function buildPlanetMesh(pd){
 }
 
 PLANETS.forEach((pd,i)=>{buildPlanetMesh(pd);});
+
+// Moon orbit ring — stored in a pivot Object3D so it can follow Earth each frame
+const moonOrbitPivot=new THREE.Object3D();
+{const pts=[];for(let j=0;j<=128;j++){const a=j/128*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*60.3,0,Math.sin(a)*60.3));}
+moonOrbitPivot.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:0x445566,transparent:true,opacity:0.25})));
+scene.add(moonOrbitPivot);}
 
 // ═══════════════════════════════════════════════════════════════════════
 // ALPHA CENTAURI STAR SYSTEM
@@ -2802,7 +2851,11 @@ function animate(){
     const orbitSpeed=pd.period>0?(2*Math.PI/(pd.period*.8)):0;
     orbitAngles[pd.id]+=(orbitSpeed*dt*s);
     const a=orbitAngles[pd.id];
-    if(!pd.isExoplanet){
+    if(pd.isMoon){
+      // Moon orbits its parent planet in world space
+      const par=planetMeshes[pd.parentId];
+      if(par){m.position.set(par.position.x+Math.cos(a)*pd.orbitR,par.position.y,par.position.z+Math.sin(a)*pd.orbitR);}
+    } else if(!pd.isExoplanet){
       m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
     }
     // self rotation: Math.max(0.5,s) ensures rotation continues even at low simSpeed (R-56)
@@ -2811,11 +2864,15 @@ function animate(){
     } else {
       m.rotation.y+=rotSpeeds[i]*Math.max(0.5,s)*(pd.id==='venus'?-1:1);
     }
+    // Tidal lock: moon always shows same face toward Earth
+    if(pd.isMoon) m.rotation.y=Math.PI-a;
     // clouds
     m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
   });
   // Sun rotation
   if(planetMeshes['sun'])planetMeshes['sun'].rotation.y+=.005*dt;
+  // Moon orbit ring follows Earth
+  if(moonOrbitPivot&&planetMeshes['earth']){moonOrbitPivot.position.copy(planetMeshes['earth'].position);}
 
   // Cockpit camera
   if(cockpitMode){
