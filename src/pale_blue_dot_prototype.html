@@ -242,7 +242,7 @@ html,body{overscroll-behavior:none;touch-action:none}
 
 <!-- Surface view canvas -->
 <canvas id="surface-canvas" style="position:fixed;inset:0;z-index:55;display:none;width:100%;height:100%"></canvas>
-<div id="surface-ui" style="position:fixed;inset:0;z-index:56;display:none;pointer-events:none;">
+<div id="surface-ui" style="position:fixed;inset:0;z-index:56;display:none;pointer-events:all;cursor:grab;">
   <button id="surface-back-btn" style="pointer-events:all;position:absolute;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 28px;border:1px solid rgba(79,195,247,.5);border-radius:24px;background:rgba(0,8,20,.7);color:#4fc3f7;font-size:13px;cursor:pointer;letter-spacing:.1em;">🚀 宇宙へ戻る</button>
   <div id="surface-info" style="position:absolute;top:20px;left:50%;transform:translateX(-50%);font-size:12px;color:#8ab;letter-spacing:.1em;"></div>
   <button id="saturn-storm-btn" style="display:none;pointer-events:all;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);padding:12px 28px;border:1px solid rgba(255,200,80,.5);border-radius:24px;background:rgba(20,10,0,.8);color:#ffc850;font-size:14px;cursor:pointer;letter-spacing:.1em;">⚡ 嵐を収める</button>
@@ -2328,230 +2328,342 @@ document.getElementById('ending-restart').addEventListener('click',async ()=>{
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// SURFACE VIEW (2D Canvas rendering)
+// SURFACE VIEW (2D Canvas — parallax panorama + noise terrain)
 // ═══════════════════════════════════════════════════════════════════════
 let saturnStormCalmed=false;
 let stormParticles=[];
-let stormAnimId=null;
+let surfAnimId=null; // unified RAF for surface view + storm
 
-function drawSurfaceView(planetId){
+// ── Noise / PRNG helpers ─────────────────────────────────────────────
+function surfHash(n){const x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x);}
+function fbm1d(x,seed){
+  let v=0,amp=1,freq=1,maxV=0;
+  for(let o=0;o<5;o++){
+    const ix=Math.floor(x*freq),fx=x*freq-ix,u=fx*fx*(3-2*fx);
+    v+=lerp(surfHash(ix*1.7+seed+o*73),surfHash((ix+1)*1.7+seed+o*73),u)*amp;
+    maxV+=amp;amp*=0.5;freq*=2.1;
+  }
+  return v/maxV;
+}
+function cellRng(cellIdx,seed){
+  let s=Math.abs(Math.sin(cellIdx*127.1+seed*31.7))*0x7fffffff>>>0||1;
+  return ()=>{s=(s*1664525+1013904223)&0x7fffffff;return s/0x7fffffff;};
+}
+
+// ── Terrain / feature draw helpers ───────────────────────────────────
+// Draw noise terrain silhouette — inside pxCtx(-off), iterates canvas-space x
+function drawTerrain(ctx,W,H,groundY,scrollOff,seed,fillStyle,amp=1){
+  const step=Math.ceil(W/280)*2;
+  ctx.beginPath();
+  let first=true;
+  for(let cx=scrollOff-step;cx<=scrollOff+W+step;cx+=step){
+    const h=fbm1d(cx/W*2.2+seed*0.03,seed%97)*H*0.13*amp;
+    if(first){ctx.moveTo(cx,groundY-h);first=false;}else ctx.lineTo(cx,groundY-h);
+  }
+  ctx.lineTo(scrollOff+W+step,H);ctx.lineTo(scrollOff-step,H);ctx.closePath();
+  ctx.fillStyle=fillStyle;ctx.fill();
+}
+// Draw rocks — inside pxCtx(-off), cellIdx in canvas-space
+function drawRocks(ctx,W,H,groundY,scrollOff,seed,colorFn,density=0.55,cellW=70,minS=8,maxS=60){
+  const startC=Math.floor(scrollOff/cellW)-1;
+  const endC=Math.ceil((scrollOff+W)/cellW)+1;
+  for(let c=startC;c<=endC;c++){
+    const rng=cellRng(c,seed);
+    if(rng()>density)continue;
+    const cx=(c+rng()*0.8+0.1)*cellW;
+    const sy=groundY+5+rng()*(H-groundY)*0.5;
+    const rw=minS+rng()*(maxS-minS),rh=rw*(0.22+rng()*0.3),ang=(rng()-0.5)*0.5;
+    ctx.beginPath();ctx.ellipse(cx,sy,rw,rh,ang,0,Math.PI*2);
+    ctx.fillStyle=colorFn(rng);ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.28)';ctx.lineWidth=1;ctx.stroke();
+  }
+}
+// Draw craters — inside pxCtx(-off)
+function drawCraters(ctx,W,H,groundY,scrollOff,seed,rimColor){
+  const cellW=140;
+  const startC=Math.floor(scrollOff/cellW)-1;
+  const endC=Math.ceil((scrollOff+W)/cellW)+1;
+  for(let c=startC;c<=endC;c++){
+    const rng=cellRng(c,seed);
+    if(rng()>0.65)continue;
+    const cx=(c+rng()*0.7+0.15)*cellW,cy=groundY+rng()*(H-groundY)*0.65,cr=8+rng()*55;
+    const cg=ctx.createRadialGradient(cx+cr*0.2,cy+cr*0.2,0,cx,cy,cr);
+    cg.addColorStop(0,'rgba(8,6,4,0.65)');cg.addColorStop(0.6,'rgba(8,6,4,0.18)');cg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
+    ctx.strokeStyle=rimColor;ctx.lineWidth=1.5+rng();ctx.stroke();
+  }
+}
+// Translate helper
+function pxCtx(ctx,off,fn){ctx.save();ctx.translate(-off,0);fn();ctx.restore();}
+
+// ── Main surface draw ─────────────────────────────────────────────────
+function drawSurfaceView(planetId,yaw=0,pitch=0){
   const canvas=document.getElementById('surface-canvas');
   const ctx=canvas.getContext('2d');
   const W=canvas.width=window.innerWidth;
   const H=canvas.height=window.innerHeight;
   const configs={
-    mercury:{skyTop:'#000000',skyHorizon:'#0c0600',groundTop:'#6a6055',groundBottom:'#38302a',stars:true,atmosphere:false,features:'craters'},
-    venus:  {skyTop:'#4a2000',skyHorizon:'#c86000',groundTop:'#6a4028',groundBottom:'#3a1e10',stars:false,atmosphere:false,features:'rocks'},
-    earth:  {skyTop:'#1055b0',skyHorizon:'#7ecce0',groundTop:'#4a8a40',groundBottom:'#2e5e28',stars:false,atmosphere:true, features:'clouds'},
-    mars:   {skyTop:'#c04828',skyHorizon:'#d8844a',groundTop:'#9a4020',groundBottom:'#5e2810',stars:false,atmosphere:true, features:'rocks'},
-    jupiter:{skyTop:'#4a3010',skyHorizon:'#c48030',groundTop:'#8a5520',groundBottom:'#6a3a10',stars:false,atmosphere:true, features:'clouds_turbulent'},
-    saturn: {skyTop:'#2a1e00',skyHorizon:'#7a5510',groundTop:'#5a4010',groundBottom:'#3a2808',stars:false,atmosphere:true, features:'storm'},
-    uranus: {skyTop:'#083848',skyHorizon:'#28a8a8',groundTop:'#186070',groundBottom:'#082838',stars:false,atmosphere:true, features:'haze'},
-    neptune:{skyTop:'#000a30',skyHorizon:'#0020a0',groundTop:'#000820',groundBottom:'#00041a',stars:true, atmosphere:true, features:'storm_blue'},
-    proxima_b:{skyTop:'#1a0500',skyHorizon:'#6a1a08',groundTop:'#3a1a0a',groundBottom:'#1a0a05',stars:false,atmosphere:true,features:'rocks'},
+    mercury:{skyTop:'#000000',skyHorizon:'#0c0600',groundTop:'#6a6055',groundBottom:'#38302a',stars:true,atmosphere:false},
+    venus:  {skyTop:'#4a2000',skyHorizon:'#c86000',groundTop:'#6a4028',groundBottom:'#3a1e10',stars:false,atmosphere:false},
+    earth:  {skyTop:'#1055b0',skyHorizon:'#7ecce0',groundTop:'#4a8a40',groundBottom:'#2e5e28',stars:false,atmosphere:true},
+    mars:   {skyTop:'#c04828',skyHorizon:'#d8844a',groundTop:'#9a4020',groundBottom:'#5e2810',stars:false,atmosphere:true},
+    jupiter:{skyTop:'#4a3010',skyHorizon:'#c48030',groundTop:'#8a5520',groundBottom:'#6a3a10',stars:false,atmosphere:true},
+    saturn: {skyTop:'#2a1e00',skyHorizon:'#7a5510',groundTop:'#5a4010',groundBottom:'#3a2808',stars:false,atmosphere:true},
+    uranus: {skyTop:'#083848',skyHorizon:'#28a8a8',groundTop:'#186070',groundBottom:'#082838',stars:false,atmosphere:true},
+    neptune:{skyTop:'#000a30',skyHorizon:'#0020a0',groundTop:'#000820',groundBottom:'#00041a',stars:true,atmosphere:true},
+    proxima_b:{skyTop:'#1a0500',skyHorizon:'#6a1a08',groundTop:'#3a1a0a',groundBottom:'#1a0a05',stars:false,atmosphere:true},
+    moon:   {skyTop:'#000000',skyHorizon:'#050402',groundTop:'#707070',groundBottom:'#303030',stars:true,atmosphere:false},
   };
   const cfg=configs[planetId]||configs.earth;
-  // Sky gradient
+  const groundY=H*0.62;
+  const seed=[...planetId].reduce((a,c,i)=>a+c.charCodeAt(0)*(i+1),7);
+  // Parallax layer offsets: base=yaw*W*0.5; layers 0=sky(fixed) .. 5=foreground
+  const base=yaw*W*0.5;
+  const L=[0,base*0.04,base*0.12,base*0.25,base*0.50,base*1.0];
+
+  // ── Sky ──────────────────────────────────────────────────────────
   const skyGrad=ctx.createLinearGradient(0,0,0,H*0.65);
   skyGrad.addColorStop(0,cfg.skyTop);skyGrad.addColorStop(1,cfg.skyHorizon);
   ctx.fillStyle=skyGrad;ctx.fillRect(0,0,W,H);
-  // Stars (Mercury / Neptune)
+
+  // Stars (mercury / neptune / moon)
   if(cfg.stars){
-    for(let i=0;i<800;i++){
-      const sx=Math.random()*W,sy=Math.random()*H*0.6,sr=Math.random()*1.5+0.3;
-      ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);
-      ctx.fillStyle=`rgba(255,255,255,${Math.random()*0.8+0.2})`;ctx.fill();
-    }
+    const stSeed=seed+31,stCount=planetId==='moon'?1100:700;
+    const cellW=Math.ceil(W/stCount*3);
+    pxCtx(ctx,L[1],()=>{
+      for(let c=Math.floor(L[1]/cellW)-1;c<=Math.ceil((L[1]+W)/cellW)+1;c++){
+        const rng=cellRng(c,stSeed);
+        const sx=(c+rng())*cellW,sy=rng()*H*0.60,sr=rng()*1.4+0.3;
+        ctx.beginPath();ctx.arc(sx,sy,sr,0,Math.PI*2);
+        ctx.fillStyle=`rgba(255,255,255,${rng()*0.8+0.2})`;ctx.fill();
+      }
+    });
   }
-  // ── Planet-specific sky ─────────────────────────────────────────────
+
+  // ── Planet sky features (L[2]) ────────────────────────────────────
   if(planetId==='mercury'){
-    // Sun ~2.5× larger apparent size; no atmosphere so razor-sharp disc
-    const sunX=W*0.68,sunY=H*0.22,sunR=Math.min(W,H)*0.10;
-    const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,sunR*2.5);
-    sg.addColorStop(0,'#ffffff');sg.addColorStop(0.25,'#fffce0');
-    sg.addColorStop(0.65,'rgba(255,230,120,0.20)');sg.addColorStop(1,'rgba(255,200,50,0)');
-    ctx.beginPath();ctx.arc(sunX,sunY,sunR*2.5,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
-    ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle='#fffff5';ctx.fill();
+    pxCtx(ctx,L[2],()=>{
+      const sunX=L[2]+W*0.68,sunY=H*0.22,sunR=Math.min(W,H)*0.10;
+      const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,sunR*2.5);
+      sg.addColorStop(0,'#ffffff');sg.addColorStop(0.25,'#fffce0');
+      sg.addColorStop(0.65,'rgba(255,230,120,0.20)');sg.addColorStop(1,'rgba(255,200,50,0)');
+      ctx.beginPath();ctx.arc(sunX,sunY,sunR*2.5,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
+      ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle='#fffff5';ctx.fill();
+    });
+  }
+  if(planetId==='moon'){
+    // Large Earth visible in sky
+    pxCtx(ctx,L[2],()=>{
+      const ex=L[2]+W*0.30,ey=H*0.26,er=Math.min(W,H)*0.17;
+      const eg=ctx.createRadialGradient(ex,ey,0,ex,ey,er*1.7);
+      eg.addColorStop(0,'rgba(80,150,255,0.12)');eg.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.beginPath();ctx.arc(ex,ey,er*1.7,0,Math.PI*2);ctx.fillStyle=eg;ctx.fill();
+      ctx.beginPath();ctx.arc(ex,ey,er,0,Math.PI*2);
+      const eg2=ctx.createRadialGradient(ex-er*0.3,ey-er*0.3,0,ex,ey,er);
+      eg2.addColorStop(0,'#6ab8ff');eg2.addColorStop(0.4,'#1a6fd4');eg2.addColorStop(0.8,'#0a4fa8');eg2.addColorStop(1,'#051a4a');
+      ctx.fillStyle=eg2;ctx.fill();
+      ctx.save();ctx.beginPath();ctx.arc(ex,ey,er,0,Math.PI*2);ctx.clip();
+      const lrng=cellRng(7,seed+500);
+      for(let i=0;i<6;i++){
+        const lx=ex+(lrng()-0.5)*er*1.5,ly=ey+(lrng()-0.5)*er*1.5;
+        const lw=er*(0.18+lrng()*0.32),lh=lw*(0.5+lrng()*0.6);
+        ctx.beginPath();ctx.ellipse(lx,ly,lw,lh,lrng()*Math.PI,0,Math.PI*2);
+        ctx.fillStyle=`rgba(${40+Math.floor(lrng()*25)},${115+Math.floor(lrng()*35)},${38+Math.floor(lrng()*18)},0.85)`;ctx.fill();
+      }
+      for(let i=0;i<4;i++){
+        const cx2=ex+(lrng()-0.5)*er*1.3,cy2=ey+(lrng()-0.5)*er*1.3;
+        ctx.beginPath();ctx.ellipse(cx2,cy2,er*(0.15+lrng()*0.22),er*(0.05+lrng()*0.08),lrng()*Math.PI,0,Math.PI*2);
+        ctx.fillStyle='rgba(255,255,255,0.68)';ctx.fill();
+      }
+      ctx.restore();
+      const tg=ctx.createRadialGradient(ex+er*0.45,ey,0,ex+er*0.45,ey,er*1.15);
+      tg.addColorStop(0,'rgba(0,0,0,0)');tg.addColorStop(0.45,'rgba(0,0,0,0)');tg.addColorStop(0.72,'rgba(0,5,20,0.48)');tg.addColorStop(1,'rgba(0,5,20,0.80)');
+      ctx.beginPath();ctx.arc(ex,ey,er,0,Math.PI*2);ctx.fillStyle=tg;ctx.fill();
+      const halo=ctx.createRadialGradient(ex,ey,er*0.92,ex,ey,er*1.18);
+      halo.addColorStop(0,'rgba(100,180,255,0.32)');halo.addColorStop(1,'rgba(40,100,255,0)');
+      ctx.beginPath();ctx.arc(ex,ey,er*1.18,0,Math.PI*2);ctx.fillStyle=halo;ctx.fill();
+    });
   }
   if(planetId==='venus'){
-    // Layered sulphuric acid cloud bands — deep ochre-orange
-    for(let i=0;i<4;i++){
-      const bandY=H*(0.08+i*0.13);
-      const a=(0.10+Math.random()*0.09).toFixed(2);
-      const bGrad=ctx.createLinearGradient(0,bandY,0,bandY+H*0.10);
-      bGrad.addColorStop(0,`rgba(220,120,30,${a})`);bGrad.addColorStop(1,'rgba(180,80,0,0)');
-      ctx.fillStyle=bGrad;ctx.fillRect(0,bandY,W,H*0.10);
-    }
+    pxCtx(ctx,L[2],()=>{
+      for(let i=0;i<4;i++){
+        const bandY=H*(0.08+i*0.13),a=(0.10+surfHash(seed+i)*0.09).toFixed(2);
+        const bG=ctx.createLinearGradient(L[2],bandY,L[2],bandY+H*0.10);
+        bG.addColorStop(0,`rgba(220,120,30,${a})`);bG.addColorStop(1,'rgba(180,80,0,0)');
+        ctx.fillStyle=bG;ctx.fillRect(L[2]-W,bandY,W*3,H*0.10);
+      }
+    });
   }
   if(planetId==='earth'){
-    // Fluffy cumulonimbus clouds mid-sky
-    for(let i=0;i<5;i++){
-      const clx=W*(0.05+i*0.22+Math.random()*0.10),cly=H*(0.20+Math.random()*0.14);
-      const clw=W*(0.11+Math.random()*0.09);
-      const cg=ctx.createRadialGradient(clx,cly,0,clx,cly,clw*0.6);
-      cg.addColorStop(0,'rgba(255,255,255,0.88)');cg.addColorStop(0.5,'rgba(255,255,255,0.42)');cg.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.beginPath();ctx.ellipse(clx,cly,clw*0.9,clw*0.32,0,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
-    }
-    // Horizon atmospheric haze
-    const hazeGrad=ctx.createLinearGradient(0,H*0.45,0,H*0.65);
-    hazeGrad.addColorStop(0,'rgba(120,200,240,0)');hazeGrad.addColorStop(1,'rgba(120,200,240,0.28)');
-    ctx.fillStyle=hazeGrad;ctx.fillRect(0,H*0.45,W,H*0.20);
+    pxCtx(ctx,L[2],()=>{
+      const crng=cellRng(0,seed+200);
+      for(let i=0;i<6;i++){
+        const clx=L[2]+W*(0.05+i*0.18+crng()*0.10),cly=H*(0.18+crng()*0.15);
+        const clw=W*(0.10+crng()*0.09);
+        const cg=ctx.createRadialGradient(clx,cly,0,clx,cly,clw*0.6);
+        cg.addColorStop(0,'rgba(255,255,255,0.88)');cg.addColorStop(0.5,'rgba(255,255,255,0.42)');cg.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.beginPath();ctx.ellipse(clx,cly,clw*0.9,clw*0.32,0,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
+      }
+    });
+    pxCtx(ctx,L[3],()=>{
+      const hG=ctx.createLinearGradient(0,H*0.45,0,H*0.65);
+      hG.addColorStop(0,'rgba(120,200,240,0)');hG.addColorStop(1,'rgba(120,200,240,0.28)');
+      ctx.fillStyle=hG;ctx.fillRect(L[3]-W,H*0.45,W*3,H*0.20);
+    });
   }
   if(planetId==='mars'){
-    // Sun smaller (~67% of Earth) and whitish through dust
-    const sunX=W*0.72,sunY=H*0.18,sunR=Math.min(W,H)*0.028;
-    const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,sunR*4.5);
-    sg.addColorStop(0,'#ffe8c0');sg.addColorStop(0.3,'rgba(255,210,120,0.45)');sg.addColorStop(1,'rgba(255,180,80,0)');
-    ctx.beginPath();ctx.arc(sunX,sunY,sunR*4.5,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
-    ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle='#ffe5cc';ctx.fill();
-    // Iron-oxide dust haze near horizon
-    const dustGrad=ctx.createLinearGradient(0,H*0.38,0,H*0.65);
-    dustGrad.addColorStop(0,'rgba(210,120,60,0)');dustGrad.addColorStop(1,'rgba(210,120,60,0.40)');
-    ctx.fillStyle=dustGrad;ctx.fillRect(0,H*0.38,W,H*0.27);
+    pxCtx(ctx,L[2],()=>{
+      const sunX=L[2]+W*0.72,sunY=H*0.18,sunR=Math.min(W,H)*0.028;
+      const sg=ctx.createRadialGradient(sunX,sunY,0,sunX,sunY,sunR*4.5);
+      sg.addColorStop(0,'#ffe8c0');sg.addColorStop(0.3,'rgba(255,210,120,0.45)');sg.addColorStop(1,'rgba(255,180,80,0)');
+      ctx.beginPath();ctx.arc(sunX,sunY,sunR*4.5,0,Math.PI*2);ctx.fillStyle=sg;ctx.fill();
+      ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle='#ffe5cc';ctx.fill();
+    });
+    pxCtx(ctx,L[3],()=>{
+      const dG=ctx.createLinearGradient(0,H*0.38,0,H*0.65);
+      dG.addColorStop(0,'rgba(210,120,60,0)');dG.addColorStop(1,'rgba(210,120,60,0.40)');
+      ctx.fillStyle=dG;ctx.fillRect(L[3]-W,H*0.38,W*3,H*0.27);
+    });
   }
   if(planetId==='saturn'){
-    // Amber cloud band streaks — extremely fast wind shear
-    for(let i=0;i<5;i++){
-      const bandY=H*(0.07+i*0.10);
-      const c=i%2===0?'rgba(200,160,60,0.18)':'rgba(160,120,40,0.12)';
-      const bGrad=ctx.createLinearGradient(0,bandY,0,bandY+H*0.08);
-      bGrad.addColorStop(0,c);bGrad.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.fillStyle=bGrad;ctx.fillRect(0,bandY,W,H*0.08);
-    }
+    pxCtx(ctx,L[2],()=>{
+      for(let i=0;i<5;i++){
+        const bandY=H*(0.07+i*0.10),c2=i%2===0?'rgba(200,160,60,0.18)':'rgba(160,120,40,0.12)';
+        const bG=ctx.createLinearGradient(0,bandY,0,bandY+H*0.08);
+        bG.addColorStop(0,c2);bG.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=bG;ctx.fillRect(L[2]-W,bandY,W*3,H*0.08);
+      }
+    });
   }
   if(planetId==='uranus'){
-    // Methane haze — subtle cyan banding
-    for(let i=0;i<3;i++){
-      const bandY=H*(0.12+i*0.16);
-      const bGrad=ctx.createLinearGradient(0,bandY,0,bandY+H*0.09);
-      bGrad.addColorStop(0,'rgba(40,200,200,0.11)');bGrad.addColorStop(1,'rgba(20,160,180,0)');
-      ctx.fillStyle=bGrad;ctx.fillRect(0,bandY,W,H*0.09);
-    }
+    pxCtx(ctx,L[2],()=>{
+      for(let i=0;i<3;i++){
+        const bandY=H*(0.12+i*0.16);
+        const bG=ctx.createLinearGradient(0,bandY,0,bandY+H*0.09);
+        bG.addColorStop(0,'rgba(40,200,200,0.11)');bG.addColorStop(1,'rgba(20,160,180,0)');
+        ctx.fillStyle=bG;ctx.fillRect(L[2]-W,bandY,W*3,H*0.09);
+      }
+    });
   }
-  // Generic atmosphere haze for remaining planets
   if(cfg.atmosphere&&!['earth','venus','mars','saturn','uranus'].includes(planetId)){
-    const hazeGrad=ctx.createLinearGradient(0,H*0.45,0,H*0.65);
-    hazeGrad.addColorStop(0,'rgba(0,0,0,0)');hazeGrad.addColorStop(1,cfg.skyHorizon+'88');
-    ctx.fillStyle=hazeGrad;ctx.fillRect(0,H*0.45,W,H*0.20);
+    const hG=ctx.createLinearGradient(0,H*0.45,0,H*0.65);
+    hG.addColorStop(0,'rgba(0,0,0,0)');hG.addColorStop(1,cfg.skyHorizon+'88');
+    ctx.fillStyle=hG;ctx.fillRect(0,H*0.45,W,H*0.20);
   }
-  // ── Ground ──────────────────────────────────────────────────────────
-  const groundY=H*0.62;
-  const groundGrad=ctx.createLinearGradient(0,groundY,0,H);
-  groundGrad.addColorStop(0,cfg.groundTop);groundGrad.addColorStop(1,cfg.groundBottom);
-  ctx.fillStyle=groundGrad;ctx.fillRect(0,groundY,W,H-groundY);
-  const horizonGrad=ctx.createLinearGradient(0,groundY-20,0,groundY+20);
-  horizonGrad.addColorStop(0,'rgba(0,0,0,0)');horizonGrad.addColorStop(0.5,cfg.skyHorizon+'55');horizonGrad.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=horizonGrad;ctx.fillRect(0,groundY-20,W,40);
-  // ── Ground features ─────────────────────────────────────────────────
-  if(planetId==='mercury'){
-    // Fine regolith texture
-    ctx.fillStyle='rgba(80,70,60,0.25)';
-    for(let i=0;i<250;i++){
-      ctx.fillRect(Math.random()*W,groundY+Math.random()*(H-groundY),Math.random()*3+1,Math.random()*2+1);
-    }
-    // Impact craters: shadowed interior + bright ejecta rim
-    for(let i=0;i<18;i++){
-      const cx=Math.random()*W,cy=groundY+Math.random()*(H-groundY)*0.7,cr=Math.random()*50+5;
-      const cg=ctx.createRadialGradient(cx+cr*0.2,cy+cr*0.2,0,cx,cy,cr);
-      cg.addColorStop(0,'rgba(15,10,8,0.60)');cg.addColorStop(0.6,'rgba(10,8,6,0.20)');cg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath();ctx.arc(cx,cy,cr,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
-      ctx.strokeStyle=`rgba(160,140,120,${0.30+Math.random()*0.30})`;ctx.lineWidth=1.5;ctx.stroke();
-    }
+
+  // ── Background terrain silhouette (L[4]) ──────────────────────────
+  if(!['jupiter','saturn','neptune'].includes(planetId)){
+    const bgCol=cfg.groundTop+'99';
+    const bgAmp=['mercury','moon'].includes(planetId)?0.6:['earth','mars'].includes(planetId)?0.45:0.35;
+    pxCtx(ctx,L[4],()=>drawTerrain(ctx,W,H,groundY,L[4],seed+500,bgCol,bgAmp));
+  }
+
+  // ── Ground fill ───────────────────────────────────────────────────
+  const gGrad=ctx.createLinearGradient(0,groundY,0,H);
+  gGrad.addColorStop(0,cfg.groundTop);gGrad.addColorStop(1,cfg.groundBottom);
+  ctx.fillStyle=gGrad;ctx.fillRect(0,groundY,W,H-groundY);
+  const hGrad=ctx.createLinearGradient(0,groundY-20,0,groundY+20);
+  hGrad.addColorStop(0,'rgba(0,0,0,0)');hGrad.addColorStop(0.5,cfg.skyHorizon+'55');hGrad.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=hGrad;ctx.fillRect(0,groundY-20,W,40);
+
+  // ── Noise terrain shape (L[5]) ─────────────────────────────────────
+  if(!['jupiter','saturn','neptune'].includes(planetId)){
+    pxCtx(ctx,L[5],()=>drawTerrain(ctx,W,H,groundY,L[5],seed,cfg.groundTop,1.0));
+  }
+
+  // ── Ground features ───────────────────────────────────────────────
+  if(planetId==='mercury'||planetId==='moon'){
+    pxCtx(ctx,L[5],()=>drawCraters(ctx,W,H,groundY,L[5],seed,
+      planetId==='moon'?'rgba(145,135,125,0.50)':'rgba(160,140,120,0.45)'));
+    pxCtx(ctx,L[5],()=>drawCraters(ctx,W,H,groundY,L[5],seed+300,
+      planetId==='moon'?'rgba(130,120,110,0.38)':'rgba(145,130,110,0.32)'));
+    // Fine regolith dots
+    pxCtx(ctx,L[5],()=>{
+      for(let c=Math.floor(L[5]/8)-1;c<=Math.ceil((L[5]+W)/8)+1;c++){
+        const rng=cellRng(c,seed+99);if(rng()>0.3)continue;
+        const cx=(c+rng())*8,cy=groundY+rng()*(H-groundY);
+        ctx.fillStyle='rgba(80,70,60,0.22)';ctx.fillRect(cx,cy,rng()*3+1,rng()*2+1);
+      }
+    });
   } else if(planetId==='venus'){
-    // Basaltic volcanic rocks on flat lava plains
-    for(let i=0;i<22;i++){
-      const rx=Math.random()*W,ry=groundY+8+Math.random()*(H-groundY)*0.50;
-      const rw=Math.random()*80+12,rh=rw*(0.20+Math.random()*0.28);
-      const dv=Math.floor(Math.random()*30);
-      ctx.beginPath();ctx.ellipse(rx,ry,rw,rh,Math.random()*0.3-0.15,0,Math.PI*2);
-      ctx.fillStyle=`rgb(${78+dv},${38+dv>>1},${14+Math.floor(dv/3)})`;ctx.fill();
-      ctx.strokeStyle='rgba(20,10,5,0.50)';ctx.lineWidth=1;ctx.stroke();
-    }
-    // Lava flow fractures
-    for(let i=0;i<5;i++){
-      ctx.beginPath();
-      ctx.moveTo(Math.random()*W,groundY+Math.random()*(H-groundY)*0.50);
-      ctx.lineTo(Math.random()*W,H);
-      ctx.strokeStyle='rgba(180,70,0,0.28)';ctx.lineWidth=1;ctx.stroke();
-    }
+    pxCtx(ctx,L[4],()=>drawRocks(ctx,W,H,groundY,L[4],seed+100,
+      rng=>`rgb(${78+Math.floor(rng()*30)},${38+Math.floor(rng()*15)},${14+Math.floor(rng()*10)})`,0.5,90,14,85));
+    pxCtx(ctx,L[5],()=>{
+      drawRocks(ctx,W,H,groundY,L[5],seed+200,
+        rng=>`rgb(${65+Math.floor(rng()*25)},${30+Math.floor(rng()*12)},${10+Math.floor(rng()*8)})`,0.50,55,8,50);
+      for(let c=Math.floor(L[5]/120)-1;c<=Math.ceil((L[5]+W)/120)+1;c++){
+        const rng=cellRng(c,seed+700);if(rng()>0.5)continue;
+        const cx=(c+rng())*120,y0=groundY+rng()*(H-groundY)*0.4,y1=H;
+        ctx.beginPath();ctx.moveTo(cx,y0);ctx.lineTo(cx+(rng()-0.5)*80,y1);
+        ctx.strokeStyle='rgba(180,70,0,0.28)';ctx.lineWidth=1;ctx.stroke();
+      }
+    });
   } else if(planetId==='earth'){
-    // Tree-line silhouette at horizon
-    for(let tx=0;tx<W;tx+=16){
-      const th=18+Math.random()*28;
-      ctx.fillStyle=`hsl(120,${40+Math.floor(Math.random()*20)}%,${28+Math.floor(Math.random()*10)}%)`;
-      ctx.fillRect(tx,groundY-th,12,th+4);
-    }
-    const gGrad=ctx.createLinearGradient(0,groundY,0,groundY+80);
-    gGrad.addColorStop(0,'#5aaa50');gGrad.addColorStop(1,'#3a6a30');
-    ctx.fillStyle=gGrad;ctx.fillRect(0,groundY,W,80);
+    pxCtx(ctx,L[4],()=>{
+      const treeStep=14;
+      for(let c=Math.floor(L[4]/treeStep)-1;c<=Math.ceil((L[4]+W)/treeStep)+1;c++){
+        const rng=cellRng(c,seed+400);
+        const cx=(c+rng()*0.6+0.2)*treeStep,th=14+rng()*26;
+        const hue=110+Math.floor(rng()*20),lum=24+Math.floor(rng()*12);
+        ctx.fillStyle=`hsl(${hue},42%,${lum}%)`;ctx.fillRect(cx,groundY-th,11,th+4);
+      }
+      const gg=ctx.createLinearGradient(0,groundY,0,groundY+80);
+      gg.addColorStop(0,'#5aaa50');gg.addColorStop(1,'#3a6a30');
+      ctx.fillStyle=gg;ctx.fillRect(L[4]-W,groundY,W*3,80);
+    });
+    pxCtx(ctx,L[5],()=>drawRocks(ctx,W,H,groundY,L[5],seed+300,
+      rng=>`hsl(${110+Math.floor(rng()*18)},${35+Math.floor(rng()*14)}%,${23+Math.floor(rng()*10)}%)`,0.30,48,5,25));
   } else if(planetId==='mars'){
-    // Dust-coated red-ochre rocks with sharp shadows
-    for(let i=0;i<28;i++){
-      const rx=Math.random()*W,ry=groundY+5+Math.random()*(H-groundY)*0.55;
-      const rw=Math.random()*70+8,rh=rw*(0.25+Math.random()*0.32);
-      const br=105+Math.floor(Math.random()*55),bg=38+Math.floor(Math.random()*22);
-      ctx.beginPath();ctx.ellipse(rx,ry,rw,rh,Math.random()*0.5-0.25,0,Math.PI*2);
-      ctx.fillStyle=`rgb(${br},${bg},16)`;ctx.fill();
-      ctx.strokeStyle='rgba(40,10,0,0.40)';ctx.lineWidth=1;ctx.stroke();
-      ctx.beginPath();ctx.ellipse(rx-rw*0.15,ry-rh*0.30,rw*0.40,rh*0.22,0,0,Math.PI*2);
-      ctx.fillStyle='rgba(220,140,80,0.22)';ctx.fill();
-    }
+    pxCtx(ctx,L[4],()=>drawRocks(ctx,W,H,groundY,L[4],seed+100,
+      rng=>`rgb(${100+Math.floor(rng()*55)},${38+Math.floor(rng()*22)},16)`,0.55,88,10,72));
+    pxCtx(ctx,L[5],()=>drawRocks(ctx,W,H,groundY,L[5],seed+200,
+      rng=>`rgb(${88+Math.floor(rng()*50)},${32+Math.floor(rng()*18)},14)`,0.60,50,6,42));
   } else if(planetId==='saturn'){
-    // Viewing from upper cloud deck — turbulent amber eddies below
-    const bandGrad=ctx.createLinearGradient(0,groundY,0,H);
-    bandGrad.addColorStop(0,'#5a4010');bandGrad.addColorStop(0.35,'#4a3808');bandGrad.addColorStop(0.75,'#3a2a05');bandGrad.addColorStop(1,'#2a1e02');
-    ctx.fillStyle=bandGrad;ctx.fillRect(0,groundY,W,H-groundY);
-    for(let i=0;i<10;i++){
-      const ex=Math.random()*W,ey=groundY+Math.random()*(H-groundY)*0.65,er=45+Math.random()*90;
-      const eg=ctx.createRadialGradient(ex,ey,0,ex,ey,er);
-      eg.addColorStop(0,`rgba(${150+Math.floor(Math.random()*60)},${100+Math.floor(Math.random()*40)},20,0.38)`);
-      eg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath();ctx.ellipse(ex,ey,er*1.9,er*0.38,0,0,Math.PI*2);ctx.fillStyle=eg;ctx.fill();
-    }
+    const bdG=ctx.createLinearGradient(0,groundY,0,H);
+    bdG.addColorStop(0,'#5a4010');bdG.addColorStop(0.35,'#4a3808');bdG.addColorStop(0.75,'#3a2a05');bdG.addColorStop(1,'#2a1e02');
+    ctx.fillStyle=bdG;ctx.fillRect(0,groundY,W,H-groundY);
+    pxCtx(ctx,L[5],()=>{
+      for(let c=Math.floor(L[5]/120)-1;c<=Math.ceil((L[5]+W)/120)+1;c++){
+        const rng=cellRng(c,seed+600);if(rng()>0.8)continue;
+        const ex=(c+rng())*120,ey=groundY+rng()*(H-groundY)*0.65,er=45+rng()*90;
+        const eg=ctx.createRadialGradient(ex,ey,0,ex,ey,er);
+        eg.addColorStop(0,`rgba(${150+Math.floor(rng()*60)},${100+Math.floor(rng()*40)},20,0.36)`);eg.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.beginPath();ctx.ellipse(ex,ey,er*1.9,er*0.38,0,0,Math.PI*2);ctx.fillStyle=eg;ctx.fill();
+      }
+    });
   } else if(planetId==='uranus'){
-    // Frozen methane-ice surface — blue-white
-    const iceGrad=ctx.createLinearGradient(0,groundY,0,H);
-    iceGrad.addColorStop(0,'#1e8090');iceGrad.addColorStop(1,'#082838');
-    ctx.fillStyle=iceGrad;ctx.fillRect(0,groundY,W,H-groundY);
-    // Frost-crack lines
-    for(let i=0;i<8;i++){
-      const fx=Math.random()*W;
-      ctx.beginPath();ctx.moveTo(fx,groundY);ctx.lineTo(fx+(Math.random()*60-30),H);
-      ctx.strokeStyle='rgba(80,200,220,0.18)';ctx.lineWidth=Math.random()*2+0.5;ctx.stroke();
-    }
-    // Ice boulders
-    for(let i=0;i<12;i++){
-      const bx=Math.random()*W,by=groundY+10+Math.random()*(H-groundY)*0.50,br=15+Math.random()*30;
-      const bg=ctx.createRadialGradient(bx-br*0.3,by-br*0.3,0,bx,by,br);
-      bg.addColorStop(0,'rgba(120,220,240,0.60)');bg.addColorStop(1,'rgba(20,80,100,0.38)');
-      ctx.beginPath();ctx.arc(bx,by,br,0,Math.PI*2);ctx.fillStyle=bg;ctx.fill();
-    }
-  } else if(cfg.features==='rocks'||cfg.features==='storm'){
-    for(let i=0;i<20;i++){
-      const rx=Math.random()*W,ry=groundY+10+Math.random()*(H-groundY)*0.5;
-      const rw=Math.random()*60+10,rh=rw*(0.4+Math.random()*0.4);
-      ctx.beginPath();ctx.ellipse(rx,ry,rw,rh,Math.random()*0.4-0.2,0,Math.PI*2);
-      ctx.fillStyle='rgba(60,50,40,0.7)';ctx.fill();
-      ctx.strokeStyle='rgba(0,0,0,0.3)';ctx.lineWidth=1;ctx.stroke();
-    }
-  } else if(cfg.features==='clouds'||cfg.features==='clouds_turbulent'||cfg.features==='haze'||cfg.features==='storm_blue'){
-    for(let i=0;i<6;i++){
-      const clx=Math.random()*W,cly=H*(0.3+Math.random()*0.2),clw=150+Math.random()*200;
-      const cloudAlpha=cfg.features==='clouds_turbulent'?0.25:0.3;
-      const cloudColor=cfg.features==='clouds_turbulent'?`rgba(220,160,60,${cloudAlpha})`:(cfg.features==='storm_blue'||cfg.features==='haze')?`rgba(80,160,220,${cloudAlpha})`:`rgba(255,255,255,${cloudAlpha})`;
-      const cg=ctx.createRadialGradient(clx,cly,0,clx,cly,clw*0.5);
-      cg.addColorStop(0,cloudColor);cg.addColorStop(1,'rgba(0,0,0,0)');
-      ctx.beginPath();ctx.ellipse(clx,cly,clw,clw*0.25,0,0,Math.PI*2);ctx.fillStyle=cg;ctx.fill();
-    }
+    const iG=ctx.createLinearGradient(0,groundY,0,H);
+    iG.addColorStop(0,'#1e8090');iG.addColorStop(1,'#082838');
+    ctx.fillStyle=iG;ctx.fillRect(0,groundY,W,H-groundY);
+    pxCtx(ctx,L[5],()=>{
+      for(let c=Math.floor(L[5]/80)-1;c<=Math.ceil((L[5]+W)/80)+1;c++){
+        const rng=cellRng(c,seed+800);if(rng()>0.55)continue;
+        const fx=(c+rng())*80;
+        ctx.beginPath();ctx.moveTo(fx,groundY);ctx.lineTo(fx+(rng()-0.5)*55,H);
+        ctx.strokeStyle='rgba(80,200,220,0.18)';ctx.lineWidth=rng()*2+0.5;ctx.stroke();
+      }
+      for(let c=Math.floor(L[5]/55)-1;c<=Math.ceil((L[5]+W)/55)+1;c++){
+        const rng=cellRng(c,seed+900);if(rng()>0.60)continue;
+        const bx=(c+rng())*55,by=groundY+10+rng()*(H-groundY)*0.50,br=12+rng()*30;
+        const bg=ctx.createRadialGradient(bx-br*0.3,by-br*0.3,0,bx,by,br);
+        bg.addColorStop(0,'rgba(120,220,240,0.60)');bg.addColorStop(1,'rgba(20,80,100,0.38)');
+        ctx.beginPath();ctx.arc(bx,by,br,0,Math.PI*2);ctx.fillStyle=bg;ctx.fill();
+      }
+    });
+  } else {
+    pxCtx(ctx,L[5],()=>drawRocks(ctx,W,H,groundY,L[5],seed,
+      rng=>`rgba(${48+Math.floor(rng()*18)},${38+Math.floor(rng()*14)},${28+Math.floor(rng()*10)},0.80)`,0.50,65,10,55));
   }
+
+  // Saturn rings in sky (after storm calmed)
   if(planetId==='saturn'&&saturnStormCalmed){
     drawSaturnRingsInSky(ctx,W,H,groundY);
   }
-  // Venus: final thick atmosphere fog over entire scene
+  // Venus final fog overlay
   if(planetId==='venus'){
-    const fogGrad=ctx.createLinearGradient(0,H*0.3,0,H);
-    fogGrad.addColorStop(0,'rgba(180,80,20,0)');fogGrad.addColorStop(0.5,'rgba(180,80,20,0.22)');fogGrad.addColorStop(1,'rgba(120,50,10,0.42)');
-    ctx.fillStyle=fogGrad;ctx.fillRect(0,H*0.3,W,H);
+    const fogG=ctx.createLinearGradient(0,H*0.3,0,H);
+    fogG.addColorStop(0,'rgba(180,80,20,0)');fogG.addColorStop(0.5,'rgba(180,80,20,0.22)');fogG.addColorStop(1,'rgba(120,50,10,0.42)');
+    ctx.fillStyle=fogG;ctx.fillRect(0,H*0.3,W,H);
   }
   if(planetId==='proxima_b'){
     ctx.fillStyle='rgba(255,150,80,0.5)';ctx.font='11px Courier New';
@@ -2588,16 +2700,9 @@ function startSaturnStorm(){
       color:Math.random()<0.1?'#ffffaa':`rgba(${150+Math.floor(Math.random()*80)},${100+Math.floor(Math.random()*50)},${20+Math.floor(Math.random()*40)},`
     });
   }
-  animateStorm();
 }
-
-function animateStorm(){
-  if(saturnStormCalmed)return;
-  const canvas=document.getElementById('surface-canvas');
-  if(!canvas||canvas.style.display==='none')return;
-  drawSurfaceView('saturn');
-  const ctx=canvas.getContext('2d');
-  const W=canvas.width,H=canvas.height;
+// Draw storm onto already-drawn canvas (called after drawSurfaceView)
+function drawStormOverlay(ctx,W,H){
   stormParticles.forEach(p=>{
     ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-p.vx*3,p.y-p.vy*3);
     const color=p.color.includes('rgba')?p.color+p.alpha+')':p.color;
@@ -2609,50 +2714,66 @@ function animateStorm(){
   if(Math.random()<0.02){
     const lx=Math.random()*W,ly1=Math.random()*H*0.2,ly2=H*0.5+Math.random()*H*0.1;
     ctx.beginPath();ctx.moveTo(lx,ly1);
-    for(let s=1;s<6;s++)ctx.lineTo(lx+(Math.random()-0.5)*40,ly1+(ly2-ly1)*s/5);
+    for(let s2=1;s2<6;s2++)ctx.lineTo(lx+(Math.random()-0.5)*40,ly1+(ly2-ly1)*s2/5);
     ctx.strokeStyle='rgba(255,255,180,0.8)';ctx.lineWidth=2;ctx.stroke();
   }
-  stormAnimId=requestAnimationFrame(animateStorm);
+}
+
+// ── Unified surface animation loop ───────────────────────────────────
+function startSurfaceLoop(pd){
+  stopSurfaceLoop();
+  if(pd.id==='saturn') startSaturnStorm();
+  function loop(){
+    const canvas=document.getElementById('surface-canvas');
+    if(!canvas||canvas.style.display==='none')return;
+    drawSurfaceView(pd.id,cockpitYaw,cockpitPitch);
+    if(pd.id==='saturn'&&!saturnStormCalmed){
+      const ctx=canvas.getContext('2d');
+      drawStormOverlay(ctx,canvas.width,canvas.height);
+    }
+    surfAnimId=requestAnimationFrame(loop);
+  }
+  surfAnimId=requestAnimationFrame(loop);
+}
+function stopSurfaceLoop(){
+  if(surfAnimId){cancelAnimationFrame(surfAnimId);surfAnimId=null;}
+  saturnStormCalmed=false;
 }
 
 function showSurfaceView(pd){
   document.getElementById('surface-canvas').style.display='block';
   document.getElementById('surface-ui').style.display='block';
   document.getElementById('surface-info').textContent=pd.nameJa+' 地表';
-  drawSurfaceView(pd.id);
-  if(pd.id==='saturn'){
-    document.getElementById('saturn-storm-btn').style.display='block';
-    startSaturnStorm();
-  }
+  startSurfaceLoop(pd);
+  if(pd.id==='saturn') document.getElementById('saturn-storm-btn').style.display='block';
 }
-
 function hideSurfaceView(){
+  stopSurfaceLoop();
   document.getElementById('surface-canvas').style.display='none';
   document.getElementById('surface-ui').style.display='none';
   document.getElementById('saturn-storm-btn').style.display='none';
-  if(stormAnimId){cancelAnimationFrame(stormAnimId);stormAnimId=null;}
-  saturnStormCalmed=false;
 }
 
-// Surface drag: rotate cockpit view while in surface mode
+// Surface drag on surface-ui (R-53 fix — surface-ui covers surface-canvas)
 {
   let surfDrag=false,surfLast={x:0,y:0};
-  const sc=document.getElementById('surface-canvas');
-  sc.addEventListener('mousedown',e=>{surfDrag=true;surfLast={x:e.clientX,y:e.clientY};});
-  sc.addEventListener('mousemove',e=>{
+  const sui=document.getElementById('surface-ui');
+  sui.addEventListener('mousedown',e=>{
+    if(e.target.tagName==='BUTTON')return;
+    surfDrag=true;surfLast={x:e.clientX,y:e.clientY};e.preventDefault();
+  });
+  sui.addEventListener('mousemove',e=>{
     if(!surfDrag)return;
     cockpitYaw+=(e.clientX-surfLast.x)*0.004;
     cockpitPitch=Math.max(-1.1,Math.min(1.1,cockpitPitch-(e.clientY-surfLast.y)*0.004));
     surfLast={x:e.clientX,y:e.clientY};
   });
-  sc.addEventListener('mouseup',()=>{surfDrag=false;});
-  sc.addEventListener('mouseleave',()=>{surfDrag=false;});
+  sui.addEventListener('mouseup',()=>{surfDrag=false;});
+  sui.addEventListener('mouseleave',()=>{surfDrag=false;});
 }
 
 document.getElementById('saturn-storm-btn').addEventListener('click',()=>{
   saturnStormCalmed=true;
-  if(stormAnimId){cancelAnimationFrame(stormAnimId);stormAnimId=null;}
-  drawSurfaceView('saturn');
   document.getElementById('saturn-storm-btn').style.display='none';
   playSfx('landing');
 });
