@@ -18,7 +18,7 @@ open src/pale_blue_dot_prototype.html
 
 ```
 ├── docs/
-│   ├── CLAUDE.md               ← Claude Code 引き継ぎ書（開発者必読）
+│   ├── CLAUDE.md               ← Claude Code 引き継ぎ書（開発者必読）  ※ルート直下に移動済み
 │   ├── requirements.md          ← 要件定義書（全仕様）
 │   └── pale_blue_dot_gdd_v3.docx ← ゲームデザインドキュメント（企画書）
 │
@@ -55,12 +55,11 @@ open src/pale_blue_dot_prototype.html
 
 ## 開発を続ける場合
 
-`docs/CLAUDE.md` を Claude Code に読ませてから開発を開始してください。
+`CLAUDE.md`（ルート直下）は Claude Code がセッション開始時に自動で読み込みます。
 
 ```bash
-# Claude Code での開発開始
+# Claude Code での開発開始（CLAUDE.md は自動読み込み）
 claude --dangerously-skip-permissions
-# 最初に CLAUDE.md を読むよう指示する
 ```
 
 ---
