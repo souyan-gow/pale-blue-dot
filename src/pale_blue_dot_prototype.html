@@ -1320,11 +1320,16 @@ function showInfoPanel(planetId){
       const img=srcTex.image;
       const iw=img.width||256,ih=img.height||256;
       const offsetX=((iconAngle/(Math.PI*2))*iw)%iw;
-      // brightness filter removes baked-in shadow from texture
-      ictx.filter='brightness(1.6)';
+      // R-52: brightness(2.5)+screen blend to fully eliminate baked-in shadow hemisphere
+      ictx.filter='brightness(2.5) saturate(0.85)';
       ictx.drawImage(img,offsetX,0,iw-offsetX,ih,-58,0,116*(iw-offsetX)/iw,116);
       if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,-58+116*(iw-offsetX)/iw,0,116*offsetX/iw,116);
       ictx.filter='none';
+      // Screen blend uniformly brightens dark areas (shadow side) without bleaching bright areas
+      ictx.globalCompositeOperation='screen';
+      ictx.fillStyle='rgba(255,255,255,0.45)';
+      ictx.fillRect(0,0,128,128);
+      ictx.globalCompositeOperation='source-over';
     } else {
       const g=ictx.createRadialGradient(48,38,5,64,64,58);
       g.addColorStop(0,'#fff');g.addColorStop(0.5,pd.colorHex);g.addColorStop(1,pd.colorHex);
@@ -1775,7 +1780,7 @@ function updateAlbum(){
         dlC.getContext('2d').drawImage(ph.canvas,0,0);
         dlC.toBlob(blob=>{
           const url=URL.createObjectURL(blob);
-          const a=document.createElement('a');a.href=url;a.download='pale-blue-dot-photo.png';a.click();
+          const a=document.createElement('a');a.href=url;a.download=(ph.label||'photo').replace(/[\\/:*?"<>|]/g,'_')+'.png';a.click();
           setTimeout(()=>URL.revokeObjectURL(url),1000);
         });
       });
@@ -2800,11 +2805,11 @@ function animate(){
     if(!pd.isExoplanet){
       m.position.set(Math.cos(a)*pd.orbitR,0,Math.sin(a)*pd.orbitR);
     }
-    // self rotation: Math.max(1,s) ensures rotation continues even when paused
+    // self rotation: Math.max(0.5,s) ensures rotation continues even at low simSpeed (R-56)
     if(pd.rotSpeed!==undefined){
-      m.rotation.y+=pd.rotSpeed*dt*Math.max(1,s);
+      m.rotation.y+=pd.rotSpeed*dt*Math.max(0.5,s);
     } else {
-      m.rotation.y+=rotSpeeds[i]*Math.max(1,s)*(pd.id==='venus'?-1:1);
+      m.rotation.y+=rotSpeeds[i]*Math.max(0.5,s)*(pd.id==='venus'?-1:1);
     }
     // clouds
     m.children.forEach(ch=>{if(ch.userData&&ch.userData.isCloud)ch.rotation.y+=.0004*s;});
