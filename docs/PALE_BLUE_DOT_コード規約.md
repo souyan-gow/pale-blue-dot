@@ -1,7 +1,8 @@
 # PALE BLUE DOT — コード規約
 
-> バージョン: 1.0
+> バージョン: 1.1
 > 作成日: 2026-04-05
+> 最終更新: 2026-04-05（R-45/R-49/R-50対応、v2.3テスト結果反映）
 > 対象ファイル: `src/pale_blue_dot_prototype.html` / `index.html`
 
 ---
@@ -151,16 +152,21 @@ STARTUP
 ### 3.4 simSpeed の扱い
 
 - **軌道運動** (`orbitAngles`): `simSpeed * dt` で更新 → 停止時に軌道も止まる
-- **自転運動** (`rotation.y`): `Math.max(1, simSpeed) * dt` で更新 → 停止時でも最低1倍速で自転継続
+- **自転運動** (`rotation.y`): `Math.max(0.5, simSpeed) * dt` で更新 → 停止時でも最低0.5倍速で自転継続
+  - simSpeed < 0.5 のとき自転速度は 0.5× 固定（公転だけが遅くなる）
+  - simSpeed >= 0.5 のとき自転速度は simSpeed に比例してスケール
 - **音声更新** (`updateAudio`): simSpeed には依存しない
 
 ```javascript
 // 軌道
 orbitAngles[pd.id] += orbitSpeed * dt * s;
 
-// 自転（simSpeed=0でも止まらない）
-m.rotation.y += pd.rotSpeed * dt * Math.max(1, s);
+// 自転（simSpeed=0でも下限0.5倍速で継続、simSpeed>0.5でスケール）
+m.rotation.y += pd.rotSpeed * dt * Math.max(0.5, s);
 ```
+
+> **注意 (R-56 対応予定)**: 現在の実装は `Math.max(1, s)` を使用。第3回テストで
+> 「simSpeed 変化に連動しない」ため △ と判定。次スプリントで `Math.max(0.5, s)` に修正予定。
 
 ### 3.5 非同期処理
 
@@ -254,11 +260,28 @@ proxOsc → proxFilter → proxGain ───────┤
 noiseSrc → noiseFilter → noiseGain ────┘
 ```
 
-### 5.2 初期化
+### 5.2 初期化（R-45 対応済）
 
-- `initAudio()` は **ユーザー操作（ミュートボタン押下）** の後に呼ぶ
-  （ブラウザの Autoplay Policy 対応）
-- `audioStarted` フラグで二重初期化を防ぐ
+- **ゲーム起動時は必ずミュート状態（🔇）** で開始する
+- `initAudio()` は **ミュートボタンを初めて押したとき**にのみ呼ぶ
+  （ブラウザの Autoplay Policy 対応。`document.click` などへの自動バインドは禁止）
+- `audioCtx` が `null` の間はミュート状態。`audioStarted` フラグで二重初期化を防ぐ
+
+```javascript
+// R-45: 初回クリックで initAudio() — mute button のみ
+let audioMuted = true;
+document.getElementById('mute-btn').addEventListener('click', () => {
+  if (!audioCtx) {
+    initAudio();
+    audioMuted = false;
+    document.getElementById('mute-btn').textContent = '🔊';
+    return;
+  }
+  audioMuted = !audioMuted;
+  document.getElementById('mute-btn').textContent = audioMuted ? '🔇' : '🔊';
+  audioNodes.master.gain.linearRampToValueAtTime(audioMuted ? 0 : 0.5, audioCtx.currentTime + 0.1);
+});
+```
 
 ### 5.3 ゲイン基準値
 
@@ -354,16 +377,30 @@ ObjectStore: photos
 }
 ```
 
-### 7.4 メモリ同期
+### 7.4 写真 CRUD 関数（R-50 対応済）
+
+| 関数 | 説明 |
+|------|------|
+| `dbSavePhoto(photoData)` | 新規保存。Promise<IDBKey> を返す |
+| `dbGetAllPhotos()` | 全件取得（timestamp インデックス順） |
+| `dbDeletePhoto(timestamp)` | timestamp を键として削除 |
+| `dbRenamePhoto(timestamp, newLabel)` | timestamp でレコードを検索しラベルを更新 |
+
+### 7.5 メモリ同期
 
 IndexedDB の変更は必ずメモリ上の `photos` 配列と `collectionMap` にも同期すること:
 
 ```javascript
-// 削除時
+// 削除時（R-50: dbDeletePhoto は timestamp をキーに使用）
 photos.splice(idx, 1);
-if (slotId) delete collectionMap[slotId];
-await dbDeletePhoto(id);
+if (ph.slotId) delete collectionMap[ph.slotId];
+document.getElementById('photo-count').textContent = `📸 ${photos.length}枚`;
+dbDeletePhoto(ph.timestamp).catch(e => console.warn('delete failed', e));
 updateAlbum();
+
+// 名前変更時（R-50）
+ph.label = newLabel;
+dbRenamePhoto(ph.timestamp, newLabel).catch(e => console.warn('rename failed', e));
 
 // クリア時（clearAllPhotos()）
 photos.length = 0;
@@ -416,8 +453,14 @@ canvas.addEventListener('wheel', e => {
 ### 8.4 イベント対象
 
 - メインキャンバス（`#c`）: ドラッグ・ホイール・クリック判定
-- 地表キャンバス（`#surface-canvas`）: 地表ビュー中のドラッグ（cockpitYaw/cockpitPitch 更新）
+- 地表UI（`#surface-ui`）: 地表ビュー中のドラッグ（cockpitYaw/cockpitPitch 更新）
+  - ⚠️ `#surface-ui`（z-index:56）は `#surface-canvas`（z-index:55）の上に重なるため、
+    ドラッグリスナーは **`#surface-ui` に設置する**（`#surface-canvas` は不可）
+  - ボタン上での mousedown はドラッグ開始しない（`e.target.tagName === 'BUTTON'` で除外）
 - HUD ボタン類: 通常の `addEventListener('click', ...)`
+
+> **注意 (R-53 対応予定)**: 現在の実装は `#surface-canvas` にリスナーを設置しており TC22 で × が継続。
+> 次スプリントで `#surface-ui` ベースに修正予定。
 
 ---
 
@@ -461,7 +504,44 @@ function animate() {
 
 ---
 
-## 10. 禁止事項
+## 10. 地表ビュー描画規約（R-49 対応済）
+
+### 10.1 drawSurfaceView(planetId) の構成
+
+`drawSurfaceView()` は以下の順序で Canvas 2D 描画を行う:
+
+```
+1. 空グラデーション（skyTop → skyHorizon）
+2. 星（cfg.stars が true のとき）
+3. 惑星固有スカイ演出（太陽ディスク / 雲帯 / ヘイズ）
+4. 汎用大気ヘイズ（上記で処理しない惑星）
+5. 地面グラデーション（groundTop → groundBottom）
+6. ホリゾンブレンド
+7. 惑星固有地形（クレーター / 岩石 / 樹木 / 氷地形）
+8. 土星リング（saturnStormCalmed が true のとき）
+9. 後置オーバーレイ（金星濃霧 / プロキシマB注釈）
+```
+
+### 10.2 各惑星の科学的根拠
+
+| 惑星 | 主な特徴 | 根拠 |
+|------|----------|------|
+| 水星 | 漆黒の空、2.5倍大の太陽、レゴリス＋クレーター | 大気なし、太陽距離0.39AU |
+| 金星 | 硫酸雲の縞、橙色濃霧、溶岩台地 | CO₂大気 93atm、温度464℃ |
+| 地球 | 青空、積乱雲、樹木シルエット | 標準大気 |
+| 火星 | ピンク〜橙の空、小さな白い太陽、赤色岩石 | 薄い CO₂大気、鉄酸化物 |
+| 土星 | 琥珀色の雲帯、雲デッキの渦、嵐パーティクル | ガス惑星上層大気 |
+| 天王星 | シアン〜青緑の空、メタン氷地表、霜割れ | メタン大気、氷惑星 |
+
+### 10.3 configs オブジェクト
+
+各惑星の描画パラメータは `configs` オブジェクトに集約する。
+直接の `if (planetId === 'x')` 分岐はスカイ演出と地形の特殊ケースに限定し、
+汎用処理は `cfg.stars` / `cfg.atmosphere` / `cfg.features` フラグで制御する。
+
+---
+
+## 11. 禁止事項
 
 | 禁止 | 理由 |
 |------|------|
@@ -475,7 +555,7 @@ function animate() {
 
 ---
 
-## 11. 変更フロー
+## 12. 変更フロー
 
 ```
 1. src/pale_blue_dot_prototype.html を編集
