@@ -1369,16 +1369,9 @@ function showInfoPanel(planetId){
       const img=srcTex.image;
       const iw=img.width||256,ih=img.height||256;
       const offsetX=((iconAngle/(Math.PI*2))*iw)%iw;
-      // R-52: brightness(2.5)+screen blend to fully eliminate baked-in shadow hemisphere
-      ictx.filter='brightness(2.5) saturate(0.85)';
-      ictx.drawImage(img,offsetX,0,iw-offsetX,ih,-58,0,116*(iw-offsetX)/iw,116);
-      if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,-58+116*(iw-offsetX)/iw,0,116*offsetX/iw,116);
-      ictx.filter='none';
-      // Screen blend uniformly brightens dark areas (shadow side) without bleaching bright areas
-      ictx.globalCompositeOperation='screen';
-      ictx.fillStyle='rgba(255,255,255,0.45)';
-      ictx.fillRect(0,0,128,128);
-      ictx.globalCompositeOperation='source-over';
+      // Draw texture centered in clip circle (center 64,64 r=58 → fill rect 6,6 116x116)
+      ictx.drawImage(img,offsetX,0,iw-offsetX,ih,6,6,116*(iw-offsetX)/iw,116);
+      if(offsetX>0)ictx.drawImage(img,0,0,offsetX,ih,6+116*(iw-offsetX)/iw,6,116*offsetX/iw,116);
     } else {
       const g=ictx.createRadialGradient(48,38,5,64,64,58);
       g.addColorStop(0,'#fff');g.addColorStop(0.5,pd.colorHex);g.addColorStop(1,pd.colorHex);
